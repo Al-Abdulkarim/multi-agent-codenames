@@ -1,19 +1,21 @@
 [project]
 name = "multi-agent-codenames"
-version = "0.1.0"
-description = "Add your description here"
+version = "2.0.0"
+description = "Multi-Agent Codenames — CrewAI + Gemini powered board game"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "aiohttp>=3.10.0",
-    "asyncio-throttle>=1.0.0",
+    "crewai>=0.100.0",
+    "crewai-tools>=0.17.0",
+    "tavily-python>=0.5.0",
     "fastapi>=0.115.0",
-    "langchain>=0.3.0",
-    "langchain-core>=0.3.0",
-    "langchain-google-genai>=2.0.0",
-    "langgraph>=0.2.0",
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
     "uvicorn[standard]>=0.32.0",
     "websockets>=13.0",
+    "colorama>=0.4.0",
+    "pyyaml>=6.0",
 ]
+
+[project.scripts]
+codenames = "main:main"

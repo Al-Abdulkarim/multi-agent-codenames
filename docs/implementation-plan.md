@@ -1,6 +1,7 @@
 # Multi-Agent Codenames — Implementation Plan
 
 > **Framework**: CrewAI + Google Gemini (`gemini-2.0-flash`)  
+> **Package Manager**: [uv](https://docs.astral.sh/uv/)  
 > **Languages**: Arabic + English (bilingual)  
 > **Interfaces**: Web UI + CLI
 
@@ -134,7 +135,8 @@ multi-agent-codenames/
 ├── tools/
 │   ├── __init__.py
 │   ├── board_tools.py       # Board analysis tool (visible words, categories)
-│   └── word_tools.py        # Word association/relationship tool
+│   ├── word_tools.py        # Word association/relationship tool
+│   └── tavily_search.py     # Tavily web search tool for category research
 ├── crews/
 │   ├── __init__.py
 │   ├── card_crew.py         # Pre-game card generation crew
@@ -166,10 +168,10 @@ multi-agent-codenames/
 │   └── results.json         # Persisted metrics
 ├── docs/
 │   └── implementation-plan.md  # This file
-├── .env                     # GOOGLE_API_KEY, GEMINI_MODEL
+├── .env                     # GOOGLE_API_KEY, TAVILY_API_KEY, GEMINI_MODEL
 ├── main.py                  # Entry point (CLI or server)
-├── requirements.txt
-├── pyproject.toml
+├── pyproject.toml           # uv project config & dependencies
+├── uv.lock                  # uv lockfile (auto-generated)
 └── README.md
 ```
 
@@ -340,15 +342,49 @@ class GameState(BaseModel):
 
 ---
 
-### Step 2 — CardCreator Agent
+### Step 2 — CardCreator Agent (with Tavily Search)
 
 **`agents/card_creator.py`**
 
-The pre-game agent. Runs once to generate the word list.
+The pre-game agent. Runs once to generate the word list. Uses **Tavily web search** as a tool so the agent can research real-world data for specific categories (e.g., searching for "Saudi Pro League football players 2025" or "European capital cities") before generating words.
+
+**Why Tavily?**
+- When the user picks a specific category like "Saudi football players", the LLM alone might hallucinate names or miss current players
+- Tavily lets the agent **search the web first**, gather real names/terms, then curate the final word list
+- For generic categories or random themes, the agent can skip the search and generate from its own knowledge
+
+**`tools/tavily_search.py`** — Tavily tool wrapper:
+
+```python
+import os
+from crewai.tools import tool
+from tavily import TavilyClient
+
+@tool("search_category")
+def search_category(query: str) -> str:
+    """Search the web for words/names related to a Codenames category.
+    Use this when the category requires real-world knowledge
+    (e.g., football players, cities, historical figures).
+    Returns a list of relevant terms found online."""
+    client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    response = client.search(
+        query=query,
+        search_depth="basic",
+        max_results=5,
+        include_answer=True,
+    )
+    # Extract the answer + top result contents for the agent
+    answer = response.get("answer", "")
+    snippets = [r.get("content", "") for r in response.get("results", [])[:3]]
+    return f"Answer: {answer}\n\nSources:\n" + "\n---\n".join(snippets)
+```
+
+**`agents/card_creator.py`** — The agent with Tavily tool:
 
 ```python
 from crewai import Agent, Task, Crew, Process, LLM
 from pydantic import BaseModel
+from tools.tavily_search import search_category
 
 class WordList(BaseModel):
     words: list[str]
@@ -365,9 +401,13 @@ class CardCreatorAgent:
                 "You are a multilingual vocabulary expert who specializes in creating "
                 "word lists for the board game Codenames. You understand cultural context "
                 "for both Arabic and English words. You ensure all words are unique, "
-                "age-appropriate, and relevant to the requested category."
+                "age-appropriate, and relevant to the requested category. "
+                "When the user requests a specific real-world category (players, cities, etc.), "
+                "use the search_category tool to find accurate, up-to-date names before "
+                "building the word list."
             ),
             llm=self.llm,
+            tools=[search_category],  # Tavily search tool
             reasoning=True,
             verbose=False,
         )
@@ -382,11 +422,16 @@ class CardCreatorAgent:
         }
 
         category_text = f"category '{category}'" if category else "random mixed themes"
+        search_instruction = (
+            f"IMPORTANT: First use the search_category tool to search for '{category}' "
+            f"to get real, accurate names/terms. Then pick {count} from the results."
+        ) if category else "Generate words from your own knowledge across mixed themes."
 
         task = Task(
             description=(
                 f"Generate exactly {count} unique words in {'Arabic' if language == 'ar' else 'English'} "
                 f"for {category_text}. Difficulty: {difficulty} — {difficulty_guide.get(difficulty, '')}. "
+                f"{search_instruction} "
                 f"Rules: no duplicates, no offensive words, each word must be a single word (no spaces)."
             ),
             expected_output=f"A JSON object with a 'words' array containing exactly {count} unique words.",
@@ -411,6 +456,13 @@ class CardCreatorAgent:
         except Exception as e:
             return (False, f"Invalid output: {e}")
 ```
+
+**How the Tavily flow works:**
+1. User picks category → e.g. `"Saudi football players"`
+2. Agent receives the task with instruction to search first
+3. Agent calls `search_category("Saudi Pro League football players")` → Tavily returns real player names
+4. Agent curates the list: picks `{count}` unique single-word names from search results
+5. Guardrail validates count + uniqueness → retries if wrong
 
 ---
 
@@ -892,20 +944,37 @@ make_guess:
 
 ### Step 13 — Dependencies
 
-**`requirements.txt`**
+Managed via **uv** in `pyproject.toml` — no `requirements.txt` needed.
 
-```
-crewai>=0.100.0
-crewai[tools]
-fastapi>=0.115.0
-uvicorn>=0.32.0
-pydantic>=2.0.0
-python-dotenv>=1.0.0
-websockets>=13.0
-colorama>=0.4.0
+**`pyproject.toml`**
+
+```toml
+[project]
+name = "multi-agent-codenames"
+version = "0.1.0"
+description = "Multi-agent Codenames game with CrewAI + Gemini"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "crewai>=0.100.0",
+    "crewai[tools]",
+    "tavily-python>=0.5.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "websockets>=13.0",
+    "colorama>=0.4.0",
+]
 ```
 
 No `langchain`, `langgraph`, or `langchain-google-genai` needed — CrewAI has native Gemini support.
+
+> **Why uv?** 
+> - 10-100x faster than pip for dependency resolution
+> - Manages virtual environments automatically (no manual `.venv` activation)
+> - Uses `pyproject.toml` as single source of truth (no separate `requirements.txt`)
+> - Generates a lockfile (`uv.lock`) for reproducible installs
 
 ---
 
@@ -924,6 +993,8 @@ No `langchain`, `langgraph`, or `langchain-google-genai` needed — CrewAI has n
 | **Board as single source of truth** | All reveals go through `GameManager.reveal_card()` | No state inconsistency |
 | **Language as first-class config** | `Language` enum flows through CardCreator → UI → validators | Bilingual from day one |
 | **Category-driven generation** | Category passed to CardCreator prompt | Infinite variety without hardcoded word lists |
+| **Tavily search for real-world categories** | CardCreator uses `search_category` tool | Accurate, up-to-date names for specific categories (players, cities, etc.) |
+| **uv for dependency management** | `pyproject.toml` + `uv.lock` | Fast installs, reproducible builds, no manual venv activation |
 | **Guardrail retries** | `guardrail_max_retries=3` on all LLM tasks | LLMs sometimes produce invalid output |
 | **GameManager is pure Python** | Not an LLM agent | Game rules must be deterministic, not probabilistic |
 | **One guess per crew kickoff** | Invoke guess crew iteratively | Board state updates between guesses |
@@ -950,7 +1021,9 @@ No `langchain`, `langgraph`, or `langchain-google-genai` needed — CrewAI has n
 |---|---|
 | CrewAI over LangGraph | `guardrail` + `output_pydantic` + YAML config are a better fit for structured game tasks |
 | Gemini over OpenAI | User preference; CrewAI supports Gemini natively via `"gemini/gemini-2.0-flash"` |
-| No hardcoded word lists | LLM generates all words dynamically per category — infinite variety |
+| No hardcoded word lists | LLM + Tavily search generates words dynamically per category — infinite variety with real-world accuracy |
+| Tavily for category research | LLM alone may hallucinate names; Tavily grounds the CardCreator in real web data |
+| uv over pip | Faster installs, lockfile reproducibility, single `pyproject.toml` config |
 | Red always starts | Standard Codenames rule; Red gets +1 card to compensate |
 | GameManager is pure Python | Game rules should be deterministic, not probabilistic |
 | One guess per crew kickoff | Board state updates between guesses for accurate context |
@@ -962,7 +1035,19 @@ No `langchain`, `langgraph`, or `langchain-google-genai` needed — CrewAI has n
 ### Prerequisites
 
 1. **Python 3.11+** installed
-2. **Google API Key** with Gemini access — get one at [Google AI Studio](https://aistudio.google.com/apikey)
+2. **[uv](https://docs.astral.sh/uv/)** installed — the fast Python package manager
+3. **Google API Key** with Gemini access — get one at [Google AI Studio](https://aistudio.google.com/apikey)
+4. **Tavily API Key** — get one at [Tavily](https://tavily.com/) (free tier: 1,000 searches/month)
+
+### Install uv (if not installed)
+
+```bash
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 ### Installation
 
@@ -970,18 +1055,11 @@ No `langchain`, `langgraph`, or `langchain-google-genai` needed — CrewAI has n
 # Clone / navigate to the project
 cd multi-agent-codenames
 
-# Create a virtual environment
-python -m venv .venv
-
-# Activate it
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+# Install all dependencies (uv creates the venv automatically)
+uv sync
 ```
+
+That's it. No manual `venv` creation, no `pip install`, no activation needed. `uv sync` reads `pyproject.toml`, resolves dependencies, creates `.venv/`, and installs everything.
 
 ### Environment Setup
 
@@ -989,13 +1067,14 @@ Create a `.env` file in the project root:
 
 ```env
 GOOGLE_API_KEY=your-google-api-key-here
+TAVILY_API_KEY=your-tavily-api-key-here
 GEMINI_MODEL=gemini/gemini-2.0-flash
 ```
 
 ### Running the Web Server
 
 ```bash
-python main.py --mode server --port 8000
+uv run python main.py --mode server --port 8000
 ```
 
 Then open your browser at **http://localhost:8000**
@@ -1014,10 +1093,10 @@ The AI agents will handle the rest — your opponent's turns run automatically, 
 
 ```bash
 # Full options
-python main.py --mode cli --lang ar --size 25 --difficulty medium --team blue --role operative
+uv run python main.py --mode cli --lang ar --size 25 --difficulty medium --team blue --role operative
 
 # Quick start with defaults (English, 25 cards, medium, red team, operative)
-python main.py --mode cli
+uv run python main.py --mode cli
 ```
 
 **CLI flags:**
@@ -1033,10 +1112,25 @@ python main.py --mode cli
 | `--category` | any text | `None` (random) |
 | `--port` | integer | `8000` (server mode only) |
 
+> **Tip**: `uv run` automatically uses the project's `.venv` — no need to activate it manually.
+
+### Adding New Dependencies
+
+```bash
+# Add a package
+uv add package-name
+
+# Add a dev-only package
+uv add --dev pytest
+
+# Remove a package
+uv remove package-name
+```
+
 ### Running AI-vs-AI Evaluation
 
 ```bash
-python -m evaluation.evaluator --games 10 --difficulty medium --size 25
+uv run python -m evaluation.evaluator --games 10 --difficulty medium --size 25
 ```
 
 Results are saved to `evaluation/results.json`.

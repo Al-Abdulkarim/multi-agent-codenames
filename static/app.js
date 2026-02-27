@@ -1,709 +1,355 @@
-/**
- * Codenames Arabic - Frontend Application
- * تطبيق واجهة المستخدم للعبة الأسماء الحركية العربية
- */
+/* ── Multi-Agent Codenames — Frontend ─────────────────────── */
 
-// ============= State =============
-let gameState = null;
-let gameId = null;
-let selectedSettings = {
-    boardSize: 25,
-    difficulty: 'medium',
-    humanTeam: 'red',
-    humanRole: 'operative',
-    apiKey: '',
+// ── i18n ────────────────────────────────────────────────────
+
+const i18n = {
+  en: {
+    title: "🕵️ Codenames",
+    subtitle: "Multi-Agent Board Game",
+    "lbl-api": "API Key",
+    "lbl-size": "Board Size",
+    "lbl-diff": "Difficulty",
+    "lbl-cat": "Category",
+    "lbl-team": "Team",
+    "lbl-role": "Role",
+    "lbl-red": "Red",
+    "lbl-blue": "Blue",
+    "lbl-spy": "Spymaster",
+    "lbl-op": "Operative",
+    "btn-start-text": "Start Game",
+    "lbl-log": "Game Log",
+    catPlaceholder: "e.g. Saudi football players, animals …",
+    turnClue: "{team} — Clue Phase",
+    turnGuess: "{team} — Guess Phase",
+    winTitle: "🎉 You Win!",
+    loseTitle: "💀 You Lose",
+    winMsg: "Congratulations! Your team found all the words.",
+    loseMsg: "Better luck next time.",
+    aiThinking: "AI is thinking …",
+  },
+  ar: {
+    title: "🕵️ كلمات سرية",
+    subtitle: "لعبة لوح متعددة الوكلاء",
+    "lbl-api": "مفتاح API",
+    "lbl-size": "حجم اللوحة",
+    "lbl-diff": "الصعوبة",
+    "lbl-cat": "الفئة",
+    "lbl-team": "الفريق",
+    "lbl-role": "الدور",
+    "lbl-red": "أحمر",
+    "lbl-blue": "أزرق",
+    "lbl-spy": "رئيس الجواسيس",
+    "lbl-op": "العميل",
+    "btn-start-text": "ابدأ اللعبة",
+    "lbl-log": "سجل اللعبة",
+    catPlaceholder: "مثال: لاعبي كرة قدم سعوديين، حيوانات …",
+    turnClue: "{team} — مرحلة التلميح",
+    turnGuess: "{team} — مرحلة التخمين",
+    winTitle: "🎉 فزت!",
+    loseTitle: "💀 خسرت",
+    winMsg: "مبروك! فريقك وجد جميع الكلمات.",
+    loseMsg: "حظ أوفر المرة القادمة.",
+    aiThinking: "الذكاء الاصطناعي يفكر …",
+  },
 };
-let socket = null;
-let isSubmitting = false;  // منع الضغط المزدوج
-let renderDebounceTimer = null;
 
-const API_BASE = '';
+let lang = "en";
 
-// ============= Initialization =============
+function t(key) {
+  return (i18n[lang] || i18n.en)[key] || key;
+}
 
-document.addEventListener('DOMContentLoaded', () => {
-    initOptionCards();
-    createToastContainer();
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+  document.body.dir = lang === "ar" ? "rtl" : "ltr";
+
+  for (const [id, text] of Object.entries(i18n[lang])) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+  const catEl = document.getElementById("category");
+  if (catEl) catEl.placeholder = t("catPlaceholder");
+}
+
+// ── state ───────────────────────────────────────────────────
+
+let gameId = null;
+let gameState = null;
+let ws = null;
+let pollTimer = null;
+
+// ── DOM refs ────────────────────────────────────────────────
+
+const $setup = document.getElementById("setup-screen");
+const $game = document.getElementById("game-screen");
+const $board = document.getElementById("board");
+const $btnStart = document.getElementById("btn-start");
+const $btnStartText = document.getElementById("btn-start-text");
+const $btnStartLoading = document.getElementById("btn-start-loading");
+const $clueDisplay = document.getElementById("clue-display");
+const $clueText = document.getElementById("clue-text");
+const $actionBar = document.getElementById("action-bar");
+const $clueForm = document.getElementById("clue-form");
+const $guessControls = document.getElementById("guess-controls");
+const $aiThinking = document.getElementById("ai-thinking");
+const $gameOver = document.getElementById("game-over");
+const $gameOverTitle = document.getElementById("game-over-title");
+const $gameOverMsg = document.getElementById("game-over-msg");
+const $logList = document.getElementById("log-list");
+
+// ── setup events ────────────────────────────────────────────
+
+document.querySelectorAll(".btn-lang").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".btn-lang").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    lang = btn.dataset.lang;
+    applyLang();
+  })
+);
+
+document.querySelectorAll('.radio-card input').forEach((inp) =>
+  inp.addEventListener("change", () => {
+    const group = inp.closest(".radio-group");
+    group.querySelectorAll(".radio-card").forEach((c) => c.classList.remove("selected"));
+    inp.closest(".radio-card").classList.add("selected");
+  })
+);
+
+document.getElementById("api-key").addEventListener("input", () => {
+  $btnStart.disabled = !document.getElementById("api-key").value.trim();
 });
 
-function initOptionCards() {
-    // Board size options
-    document.querySelectorAll('#board-size-options .option-card').forEach(card => {
-        card.addEventListener('click', () => {
-            selectOption('board-size-options', card);
-            selectedSettings.boardSize = parseInt(card.dataset.value);
-        });
-    });
+$btnStart.addEventListener("click", startGame);
+document.getElementById("btn-clue")?.addEventListener("click", submitClue);
+document.getElementById("btn-pass")?.addEventListener("click", passTurn);
+document.getElementById("btn-new-game")?.addEventListener("click", () => location.reload());
 
-    // Difficulty options
-    document.querySelectorAll('#difficulty-options .option-card').forEach(card => {
-        card.addEventListener('click', () => {
-            selectOption('difficulty-options', card);
-            selectedSettings.difficulty = card.dataset.value;
-        });
-    });
-
-    // Role options
-    document.querySelectorAll('#role-options .option-card').forEach(card => {
-        card.addEventListener('click', () => {
-            selectOption('role-options', card);
-            selectedSettings.humanRole = card.dataset.value;
-        });
-    });
-
-    // Team options
-    document.querySelectorAll('#team-options .option-card').forEach(card => {
-        card.addEventListener('click', () => {
-            selectOption('team-options', card);
-            selectedSettings.humanTeam = card.dataset.value;
-        });
-    });
-}
-
-function selectOption(groupId, selectedCard) {
-    document.querySelectorAll(`#${groupId} .option-card`).forEach(c => {
-        c.classList.remove('selected');
-    });
-    selectedCard.classList.add('selected');
-}
-
-// ============= Toast Notifications =============
-
-function createToastContainer() {
-    if (!document.querySelector('.toast-container')) {
-        const container = document.createElement('div');
-        container.className = 'toast-container';
-        document.body.appendChild(container);
-    }
-}
-
-function showToast(message, type = 'info') {
-    const container = document.querySelector('.toast-container');
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.textContent = message;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-}
-
-// ============= Screen Management =============
-
-function showSetup() {
-    document.getElementById('setup-screen').classList.add('active');
-    document.getElementById('game-screen').classList.remove('active');
-    document.getElementById('game-over-overlay').style.display = 'none';
-    gameState = null;
-    gameId = null;
-}
-
-function showGame() {
-    document.getElementById('setup-screen').classList.remove('active');
-    document.getElementById('game-screen').classList.add('active');
-}
-
-// ============= API Calls =============
-
-async function apiCall(endpoint, method = 'GET', body = null, timeoutMs = 60000) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-        const options = {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-        };
-        if (body) options.body = JSON.stringify(body);
-
-        const response = await fetch(`${API_BASE}${endpoint}`, options);
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: 'خطأ في الاتصال' }));
-            throw new Error(errorData.detail || `HTTP ${response.status}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-            throw new Error('انتهت مهلة الاتصال (60 ثانية) - يرجى المحاولة مجدداً');
-        }
-        console.error('API Error:', error);
-        throw error;
-    }
-}
-
-// ============= Game Actions =============
+// ── start game ──────────────────────────────────────────────
 
 async function startGame() {
-    const apiKey = document.getElementById('api-key-input').value.trim();
-    if (!apiKey) {
-        showToast('يرجى إدخال مفتاح Google API', 'error');
-        return;
+  $btnStartText.classList.add("hidden");
+  $btnStartLoading.classList.remove("hidden");
+  $btnStart.disabled = true;
+
+  const body = {
+    board_size: parseInt(document.getElementById("board-size").value),
+    difficulty: document.getElementById("difficulty").value,
+    language: lang,
+    category: document.getElementById("category").value || null,
+    human_team: document.querySelector('input[name="team"]:checked').value,
+    human_role: document.querySelector('input[name="role"]:checked').value,
+    api_key: document.getElementById("api-key").value.trim(),
+  };
+
+  try {
+    const res = await fetch("/api/game/new", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.error) {
+      alert(data.error);
+      return;
     }
 
-    selectedSettings.apiKey = apiKey;
+    gameId = data.game_id;
+    gameState = data;
 
-    const btn = document.getElementById('start-game-btn');
-    btn.disabled = true;
-    btn.querySelector('.btn-text').textContent = 'جاري التحميل...';
+    $setup.classList.remove("active");
+    $game.classList.add("active");
 
-    showLoading('جاري تهيئة اللعبة...');
-
-    try {
-        const data = await apiCall('/api/game/new', 'POST', {
-            board_size: selectedSettings.boardSize,
-            difficulty: selectedSettings.difficulty,
-            human_team: selectedSettings.humanTeam,
-            human_role: selectedSettings.humanRole,
-            api_key: selectedSettings.apiKey,
-        });
-
-        gameState = data;
-        gameId = data.game_id;
-
-        showGame();
-        renderGame();
-        showToast('بدأت اللعبة! حظاً سعيداً 🎮', 'success');
-    } catch (error) {
-        showToast(`خطأ: ${error.message}`, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.querySelector('.btn-text').textContent = 'ابدأ اللعبة';
-        hideLoading();
-        if (gameId) {
-            setupWebSocket(gameId);
-        }
-    }
+    connectWS();
+    render();
+    startPolling();
+  } catch (e) {
+    alert("Failed to start game: " + e.message);
+  } finally {
+    $btnStartText.classList.remove("hidden");
+    $btnStartLoading.classList.add("hidden");
+    $btnStart.disabled = false;
+  }
 }
 
-async function submitClue() {
-    if (isSubmitting) return;
-    const clueWord = document.getElementById('clue-input').value.trim();
-    const clueNumber = parseInt(document.getElementById('clue-number-input').value);
+// ── WebSocket ───────────────────────────────────────────────
 
-    if (!clueWord) {
-        showToast('يرجى كتابة الشفرة', 'error');
-        return;
+function connectWS() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${proto}//${location.host}/ws/${gameId}`);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.event === "state_update") {
+      gameState = msg.data;
+      render();
+    } else if (msg.event === "ai_thinking") {
+      $aiThinking.classList.remove("hidden");
+    } else if (msg.event === "ai_turn_complete") {
+      $aiThinking.classList.add("hidden");
+      logEvent(`AI: ${msg.data.clue?.word} for ${msg.data.clue?.number}`);
+    } else if (msg.event === "game_over") {
+      // handled in render
     }
+  };
+  ws.onclose = () => { ws = null; };
+}
 
-    isSubmitting = true;
-    showAIThinking('الذكاء الاصطناعي يعالج الشفرة...');
+// ── polling fallback ────────────────────────────────────────
 
+function startPolling() {
+  pollTimer = setInterval(async () => {
+    if (!gameId) return;
     try {
-        const data = await apiCall('/api/game/clue', 'POST', {
-            game_id: gameId,
-            clue: clueWord,
-            number: clueNumber,
-        });
-
+      const res = await fetch(`/api/game/${gameId}/state`);
+      const data = await res.json();
+      if (!data.error) {
         gameState = data;
-        document.getElementById('clue-input').value = '';
-        renderGame();
-        showToast('تم إرسال الشفرة ✅', 'success');
-    } catch (error) {
-        showToast(`خطأ: ${error.message}`, 'error');
-    } finally {
-        isSubmitting = false;
-        hideAIThinking();
+        render();
+      }
+    } catch { /* ignore */ }
+  }, 3000);
+}
+
+// ── render ──────────────────────────────────────────────────
+
+function render() {
+  if (!gameState) return;
+  const s = gameState;
+
+  // scores
+  document.getElementById("red-count").textContent = s.red_remaining;
+  document.getElementById("blue-count").textContent = s.blue_remaining;
+
+  // turn indicator
+  const teamLabel = s.current_team.toUpperCase();
+  const phaseLabel = s.current_phase === "clue" ? "Clue" : "Guess";
+  document.getElementById("turn-indicator").textContent = `${teamLabel} — ${phaseLabel} Phase`;
+
+  // board
+  const cols = s.board.length <= 15 ? 5 : s.board.length <= 25 ? 5 : 7;
+  $board.className = `board cols-${cols}`;
+  $board.innerHTML = "";
+
+  const isSpymaster = s.human_role === "spymaster" && s.current_team === s.human_team;
+
+  s.board.forEach((card) => {
+    const div = document.createElement("div");
+    div.className = "card";
+    div.textContent = card.word;
+
+    if (card.revealed && card.card_type) {
+      div.classList.add("revealed", card.card_type);
+    } else if (isSpymaster && card.card_type) {
+      div.classList.add("hint-" + card.card_type);
     }
+
+    // click to guess
+    if (
+      !card.revealed &&
+      s.whose_turn?.actor === "human" &&
+      s.current_phase === "guess" &&
+      s.human_role === "operative"
+    ) {
+      div.addEventListener("click", () => submitGuess(card.word));
+    }
+
+    $board.appendChild(div);
+  });
+
+  // clue display
+  if (s.current_phase === "guess" && s.turns_history.length > 0) {
+    const lastTurn = s.turns_history[s.turns_history.length - 1];
+    $clueText.textContent = `"${lastTurn.clue.word}" for ${lastTurn.clue.number}  (${s.guesses_remaining} left)`;
+    $clueDisplay.classList.remove("hidden");
+  } else {
+    $clueDisplay.classList.add("hidden");
+  }
+
+  // action bar
+  if (s.whose_turn?.actor === "human" && !s.game_over) {
+    $actionBar.classList.remove("hidden");
+    if (s.current_phase === "clue" && s.human_role === "spymaster") {
+      $clueForm.classList.remove("hidden");
+      $guessControls.classList.add("hidden");
+    } else if (s.current_phase === "guess" && s.human_role === "operative") {
+      $clueForm.classList.add("hidden");
+      $guessControls.classList.remove("hidden");
+    } else {
+      $actionBar.classList.add("hidden");
+    }
+  } else {
+    $actionBar.classList.add("hidden");
+  }
+
+  // AI thinking
+  if (s.whose_turn?.actor === "ai" && !s.game_over) {
+    $aiThinking.classList.remove("hidden");
+  } else {
+    $aiThinking.classList.add("hidden");
+  }
+
+  // game over
+  if (s.game_over) {
+    $gameOver.classList.remove("hidden");
+    const won = s.winner === s.human_team;
+    $gameOverTitle.textContent = won ? t("winTitle") : t("loseTitle");
+    $gameOverMsg.textContent = won ? t("winMsg") : t("loseMsg");
+    clearInterval(pollTimer);
+  }
+}
+
+// ── actions ─────────────────────────────────────────────────
+
+async function submitClue() {
+  const clue = document.getElementById("clue-input").value.trim();
+  const number = parseInt(document.getElementById("clue-number").value);
+  if (!clue) return;
+
+  const res = await fetch("/api/game/clue", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ game_id: gameId, clue, number }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    alert(data.error);
+  } else {
+    document.getElementById("clue-input").value = "";
+    logEvent(`You: "${clue}" for ${number}`);
+  }
 }
 
 async function submitGuess(word) {
-    if (isSubmitting) return;
-    if (!gameState || gameState.game_over) return;
-    if (gameState.current_phase !== 'guess') return;
-
-    // Check if it's the human's turn to guess
-    const isHumanTeam = gameState.current_team === selectedSettings.humanTeam;
-    if (!isHumanTeam || selectedSettings.humanRole !== 'operative') return;
-
-    isSubmitting = true;
-
-    try {
-        const data = await apiCall('/api/game/guess', 'POST', {
-            game_id: gameId,
-            word: word,
-        });
-
-        gameState = data;
-
-        // Show guess result
-        if (data.last_guess) {
-            const { correct, card_type } = data.last_guess;
-            const typeAr = {
-                'red': 'أحمر 🔴',
-                'blue': 'أزرق 🔵',
-                'neutral': 'محايد ⚪',
-                'assassin': 'قاتل ☠️'
-            }[card_type] || card_type;
-
-            if (correct) {
-                showToast(`✅ صحيح! "${word}" - ${typeAr}`, 'success');
-            } else {
-                showToast(`❌ خطأ! "${word}" - ${typeAr}`, 'error');
-            }
-        }
-
-        renderGame();
-
-        // إذا انتهى دور الإنسان، أوضح أن الـ AI يعمل
-        if (gameState && !gameState.game_over &&
-            (gameState.current_team !== selectedSettings.humanTeam ||
-                gameState.current_phase === 'clue' && selectedSettings.humanRole !== 'spymaster')) {
-            showAIThinking('الذكاء الاصطناعي يفكر...');
-        }
-    } catch (error) {
-        showToast(`خطأ: ${error.message}`, 'error');
-    } finally {
-        isSubmitting = false;
-    }
+  const res = await fetch("/api/game/guess", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ game_id: gameId, word }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    alert(data.error);
+  } else {
+    const icon = data.correct ? "✅" : "❌";
+    logEvent(`${icon} ${word} → ${data.revealed}`);
+  }
 }
 
 async function passTurn() {
-    if (!gameId || isSubmitting) return;
-
-    isSubmitting = true;
-    showAIThinking('جاري تمرير الدور...');
-
-    try {
-        const data = await apiCall('/api/game/pass', 'POST', { game_id: gameId });
-        gameState = data;
-        renderGame();
-        showToast('تم تمرير الدور ⏭️');
-    } catch (error) {
-        showToast(`خطأ: ${error.message}`, 'error');
-    } finally {
-        isSubmitting = false;
-        hideAIThinking();
-    }
+  await fetch("/api/game/pass", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ game_id: gameId }),
+  });
+  logEvent("⏭ Passed turn");
 }
 
-// ============= Rendering =============
-
-function renderGame() {
-    if (!gameState) return;
-
-    renderHeader();
-    renderBoard();
-    renderClue();
-    renderActions();
-    renderThinkingLog();
-    renderEventLog();
-    renderClueHistory();
-
-    // Always check game over, but the function will handle the delay
-    checkGameOver();
+function logEvent(text) {
+  const li = document.createElement("li");
+  li.textContent = text;
+  $logList.prepend(li);
 }
 
-function renderHeader() {
-    // Scores
-    document.getElementById('red-remaining').textContent = gameState.red_remaining;
-    document.getElementById('blue-remaining').textContent = gameState.blue_remaining;
+// ── init ────────────────────────────────────────────────────
 
-    // Turn indicator
-    const indicator = document.getElementById('turn-indicator');
-    const teamDisplay = document.getElementById('current-team-display');
-    const phaseDisplay = document.getElementById('current-phase-display');
-
-    indicator.className = `turn-indicator team-${gameState.current_team}`;
-    teamDisplay.textContent = gameState.current_team === 'red' ? 'الأحمر' : 'الأزرق';
-
-    const phaseLabels = {
-        'clue': '📝 الشفرة',
-        'guess': '🎯 التخمين',
-        'game_over': '🏁 انتهت',
-    };
-    phaseDisplay.textContent = phaseLabels[gameState.current_phase] || gameState.current_phase;
-}
-
-function renderBoard() {
-    const boardEl = document.getElementById('game-board');
-    const size = gameState.board_size;
-
-    // Set grid class
-    boardEl.className = `game-board size-${size}`;
-    boardEl.innerHTML = '';
-
-    const isSpymaster = selectedSettings.humanRole === 'spymaster';
-    const isHumanGuessTurn = (
-        gameState.current_team === selectedSettings.humanTeam &&
-        gameState.current_phase === 'guess' &&
-        selectedSettings.humanRole === 'operative'
-    );
-
-    gameState.board.forEach((card, index) => {
-        const cardEl = document.createElement('div');
-        cardEl.className = 'card';
-        cardEl.setAttribute('id', `card-${index}`);
-
-        if (card.revealed) {
-            cardEl.classList.add('revealed', `type-${card.card_type}`);
-
-            // Add "Correct" mark on game over for ALL revealed (guessed) cards
-            if (gameState.game_over) {
-                const marker = document.createElement('span');
-                marker.className = 'card-status-marker correct';
-                marker.textContent = '✅';
-                cardEl.appendChild(marker);
-            }
-        } else {
-            // Game Over: show all types but NO markers (requested by user)
-            if (gameState.game_over) {
-                cardEl.classList.add(`spy-${card.card_type}`);
-            } else if (isSpymaster && card.card_type) {
-                // Spymaster sees card types
-                cardEl.classList.add(`spy-${card.card_type}`);
-
-                // Add type dot
-                const dot = document.createElement('span');
-                dot.className = `card-type-dot dot-${card.card_type}`;
-                cardEl.appendChild(dot);
-            }
-
-            // Clickable for operative during guess phase
-            if (isHumanGuessTurn && !gameState.game_over) {
-                cardEl.addEventListener('click', () => submitGuess(card.word));
-                cardEl.style.cursor = 'pointer';
-            } else {
-                cardEl.classList.add('disabled');
-            }
-        }
-
-        const wordEl = document.createElement('span');
-        wordEl.className = 'card-word';
-        wordEl.textContent = card.word;
-        cardEl.appendChild(wordEl);
-
-        boardEl.appendChild(cardEl);
-    });
-}
-
-function renderClue() {
-    const clueDisplay = document.getElementById('clue-display');
-
-    if (gameState.current_clue) {
-        clueDisplay.style.display = 'flex';
-        document.getElementById('clue-word').textContent = gameState.current_clue.word;
-        document.getElementById('clue-number').textContent = gameState.current_clue.number;
-        document.getElementById('guesses-remaining').textContent =
-            `تخمينات متبقية: ${gameState.guesses_remaining}`;
-    } else {
-        clueDisplay.style.display = 'none';
-    }
-}
-
-function renderActions() {
-    const clueForm = document.getElementById('clue-form');
-    const passBtn = document.getElementById('pass-btn');
-
-    const isHumanTeam = gameState.current_team === selectedSettings.humanTeam;
-
-    // Show clue form for human spymaster
-    if (isHumanTeam &&
-        gameState.current_phase === 'clue' &&
-        selectedSettings.humanRole === 'spymaster') {
-        clueForm.style.display = 'flex';
-    } else {
-        clueForm.style.display = 'none';
-    }
-
-    // Show pass button for human operative during guess phase
-    if (isHumanTeam &&
-        gameState.current_phase === 'guess' &&
-        selectedSettings.humanRole === 'operative') {
-        passBtn.style.display = 'inline-flex';
-    } else {
-        passBtn.style.display = 'none';
-    }
-}
-
-function renderThinkingLog() {
-    const logEl = document.getElementById('thinking-log');
-    const steps = gameState.thinking_log || [];
-
-    if (steps.length === 0) {
-        logEl.innerHTML = '<div class="thinking-empty">ستظهر هنا عمليات تفكير الوكلاء...</div>';
-        return;
-    }
-
-    logEl.innerHTML = '';
-
-    steps.forEach(step => {
-        const stepEl = document.createElement('div');
-        const teamClass = step.team ? `team-${step.team}` : '';
-        stepEl.className = `thinking-step type-${step.step_type} ${teamClass}`;
-
-        const typeLabels = {
-            'reflection': 'تأمل',
-            'react': 'تنفيذ',
-            'planning': 'تخطيط',
-        };
-
-        stepEl.innerHTML = `
-            <div class="thinking-step-header">
-                <span class="thinking-agent-name">${escapeHtml(step.agent_name)}</span>
-                <span class="thinking-type-badge badge-${step.step_type}">
-                    ${typeLabels[step.step_type] || step.step_type}
-                </span>
-            </div>
-            <div class="thinking-content">${escapeHtml(step.content)}</div>
-        `;
-
-        logEl.appendChild(stepEl);
-    });
-
-    // Auto-scroll to bottom
-    logEl.scrollTop = logEl.scrollHeight;
-}
-
-function renderClueHistory() {
-    const historyEl = document.getElementById('clue-history-list');
-    const history = gameState.clue_history || [];
-
-    if (history.length === 0) {
-        historyEl.innerHTML = '<div class="history-empty">لا توجد شفرات سابقة</div>';
-        return;
-    }
-
-    historyEl.innerHTML = '';
-
-    // Sort reverse to show newest first
-    const sortedHistory = [...history].reverse();
-
-    sortedHistory.forEach(item => {
-        const itemEl = document.createElement('div');
-        itemEl.className = `history-item team-${item.team}`;
-
-        const guessesHtml = item.guesses.map(g =>
-            `<span class="history-guess ${g.correct ? 'correct' : 'wrong'}">${escapeHtml(g.word)}</span>`
-        ).join(' ');
-
-        itemEl.innerHTML = `
-            <div class="history-header">
-                <span class="history-team-dot"></span>
-                <span class="history-turn">الدور ${item.turn}</span>
-            </div>
-            <div class="history-clue">
-                <strong>${escapeHtml(item.word)}</strong> - ${item.number}
-            </div>
-            <div class="history-guesses">
-                ${guessesHtml || '<span class="history-no-guesses">لا توجد تخمينات</span>'}
-            </div>
-        `;
-        historyEl.appendChild(itemEl);
-    });
-}
-
-function renderEventLog() {
-    const logEl = document.getElementById('event-log');
-    const events = gameState.event_log || [];
-
-    logEl.innerHTML = '';
-
-    events.forEach(event => {
-        const eventEl = document.createElement('div');
-        eventEl.className = `event-item type-${event.type}`;
-        eventEl.textContent = event.message;
-        logEl.appendChild(eventEl);
-    });
-
-    logEl.scrollTop = logEl.scrollHeight;
-}
-
-function checkGameOver() {
-    if (!gameState.game_over) {
-        document.getElementById('game-over-overlay').style.display = 'none';
-        return;
-    }
-
-    // Show board first, then delay overlay
-    setTimeout(() => {
-        // Double check if still game over and not reset
-        if (!gameState || !gameState.game_over) return;
-
-        const overlay = document.getElementById('game-over-overlay');
-        const icon = document.getElementById('game-over-icon');
-        const title = document.getElementById('game-over-title');
-        const reason = document.getElementById('game-over-reason');
-        const stats = document.getElementById('game-over-stats');
-
-        const isWinner = gameState.winner === selectedSettings.humanTeam;
-
-        icon.textContent = isWinner ? '🏆' : '😔';
-        title.textContent = isWinner ? '🎉 فزت! مبروك!' : '😞 خسرت! حظاً أفضل';
-        title.style.color = isWinner ? 'var(--accent-gold)' : 'var(--red-primary)';
-        reason.textContent = gameState.game_over_reason;
-
-        stats.innerHTML = `
-            <div>
-                <div style="font-size: 1.5rem; font-weight: 800; color: var(--red-primary);">${gameState.red_remaining}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted);">أحمر متبقي</div>
-            </div>
-            <div>
-                <div style="font-size: 1.5rem; font-weight: 800; color: var(--blue-primary);">${gameState.blue_remaining}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted);">أزرق متبقي</div>
-            </div>
-            <div>
-                <div style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">${gameState.turn_number}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted);">عدد الأدوار</div>
-            </div>
-        `;
-
-        overlay.style.display = 'flex';
-    }, 2000); // 2 second delay to review board
-}
-
-function closeGameOver() {
-    document.getElementById('game-over-overlay').style.display = 'none';
-}
-
-// ============= UI Helpers =============
-
-// ============= Non-blocking AI indicator =============
-
-function showAIThinking(text = 'الذكاء الاصطناعي يفكر...') {
-    let indicator = document.getElementById('ai-thinking-bar');
-    if (!indicator) {
-        indicator = document.createElement('div');
-        indicator.id = 'ai-thinking-bar';
-        indicator.innerHTML = `
-            <div class="ai-bar-spinner"></div>
-            <span id="ai-bar-text">${text}</span>
-        `;
-        document.body.appendChild(indicator);
-    }
-    document.getElementById('ai-bar-text').textContent = text;
-    indicator.style.display = 'flex';
-}
-
-function hideAIThinking() {
-    const indicator = document.getElementById('ai-thinking-bar');
-    if (indicator) indicator.style.display = 'none';
-}
-
-// إبقاء الدوال القديمة للتوافق
-function showLoading(text = 'جاري التحميل...') {
-    showAIThinking(text);
-}
-
-function hideLoading() {
-    hideAIThinking();
-}
-
-function toggleThinkingPanel() {
-    const panel = document.getElementById('thinking-panel');
-    panel.classList.toggle('collapsed');
-    panel.classList.toggle('open');
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// ============= Keyboard Shortcuts =============
-
-document.addEventListener('keydown', (e) => {
-    // Enter to submit clue
-    if (e.key === 'Enter' && document.getElementById('clue-form').style.display !== 'none') {
-        e.preventDefault();
-        submitClue();
-    }
-
-    // Escape to pass turn
-    if (e.key === 'Escape' && document.getElementById('pass-btn').style.display !== 'none') {
-        passTurn();
-    }
-});
-function setupWebSocket(id) {
-    if (socket) {
-        socket.close();
-    }
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/${id}`;
-
-    socket = new WebSocket(wsUrl);
-
-    socket.onopen = () => {
-        console.log('Connected to WebSocket for game:', id);
-        // Start polling as a safety backup
-        startPolling();
-    };
-
-    socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.error) {
-            console.error('WS Error:', data.error);
-            showToast(data.error, 'error');
-            return;
-        }
-
-        gameState = data;
-        hideAIThinking();
-        isSubmitting = false;
-
-        if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
-        renderDebounceTimer = setTimeout(() => {
-            renderGame();
-        }, 150);
-    };
-
-    socket.onclose = () => {
-        console.log('WebSocket disconnected');
-    };
-
-    socket.onerror = (error) => {
-        console.error('WebSocket Error:', error);
-    };
-}
-
-// ============= Smart Polling (backup when AI is working) =============
-let pollingInterval = null;
-
-function startPolling() {
-    if (pollingInterval) return;
-    pollingInterval = setInterval(async () => {
-        if (!gameId || !gameState) return;
-        if (gameState.game_over) { stopPolling(); return; }
-
-        try {
-            const data = await fetch(`/api/game/${gameId}/status`).then(r => r.json());
-            if (!data || !data.game_id) return;
-
-            const changed = JSON.stringify(data.board) !== JSON.stringify(gameState.board)
-                || data.current_phase !== gameState.current_phase
-                || data.current_team !== gameState.current_team
-                || data.game_over !== gameState.game_over;
-
-            if (changed) {
-                gameState = data;
-                hideAIThinking();
-                isSubmitting = false;
-                if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
-                renderDebounceTimer = setTimeout(() => renderGame(), 150);
-            }
-
-            // وصل دور البشري أو انتهت اللعبة → أوقف الـ polling
-            const isMyTurn = (
-                data.current_team === selectedSettings.humanTeam && (
-                    (data.current_phase === 'clue' && selectedSettings.humanRole === 'spymaster') ||
-                    (data.current_phase === 'guess' && selectedSettings.humanRole === 'operative')
-                )
-            );
-            if (isMyTurn || data.game_over) {
-                stopPolling();
-                hideAIThinking();
-                isSubmitting = false;
-            }
-        } catch (e) { /* تجاهل أخطاء الـ polling */ }
-    }, 3000);
-}
-
-function stopPolling() {
-    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
-}
-
+applyLang();

@@ -1,0 +1,24 @@
+generate_words:
+  description: >
+    Generate exactly {count} unique words in {language} for {category}.
+    Difficulty: {difficulty}. No duplicates, no offensive words, each word
+    must be a single word (no spaces).
+  expected_output: "A JSON object with a 'words' array of {count} unique words"
+
+give_clue:
+  description: >
+    You are the {team} Spymaster. The board is: {board_state}.
+    Previous turns: {history}.
+    Target connecting {target} of your team's unrevealed words.
+    Give a one-word clue and the number of words it relates to.
+    NEVER use a word that is on the board. Avoid the assassin at all costs.
+  expected_output: "JSON with 'clue' (single word) and 'number' (integer)"
+
+make_guess:
+  description: >
+    The Spymaster's clue is '{clue}' for {number}.
+    Visible board (you CANNOT see unrevealed types): {public_board}.
+    Previous turns: {history}.
+    Pick your BEST single guess from the unrevealed words on the board.
+    Return the exact word as it appears on the board.
+  expected_output: "JSON with 'word' (exact board word), 'confidence' (0-1), and 'reasoning'"
