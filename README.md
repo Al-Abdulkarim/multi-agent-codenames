@@ -1,209 +1,133 @@
-# 🕵️ Codenames Arabic - الأسماء الحركية العربية
+# 🕵️ Codenames — Multi-Agent AI Board Game
 
-## نظام متكامل للعبة Codenames باللغة العربية | Multi-Agent AI System
+## Overview
 
-> مشروع تخرج متقدم يعتمد على إطار عمل **LangGraph** لبناء نظام وكلاء ذكاء اصطناعي متعدد لإدارة لعبة الأسماء الحركية باللغة العربية مع واجهة ويب احترافية.
-
----
-
-## 🏗️ هيكلية النظام (System Architecture)
-
-```
-┌──────────────────────────────────────────────────────┐
-│                    LangGraph Orchestrator              │
-│              (إدارة سير العمل والوكلاء)                │
-├──────────────┬───────────────┬────────────────────────┤
-│              │               │                        │
-│  Content     │  Game Master  │   AI Team (Isolated)   │
-│  Creator     │  Agent        │   ┌─────────────────┐  │
-│  Agent       │               │   │  AI Spymaster   │  │
-│              │  - Board Mgmt │   │  (Secret Access) │  │
-│  - Dynamic   │  - Role Assign│   ├─────────────────┤  │
-│    Word Gen  │  - Turn Logic │   │  AI Operative   │  │
-│  - LLM-based │  - Board Size │   │  (Public Only)  │  │
-│              │    (8/16/25)  │   │  ⛔ NO SECRET   │  │
-│              │               │   │     ACCESS      │  │
-│              │               │   └─────────────────┘  │
-├──────────────┴───────────────┴────────────────────────┤
-│          Safety Guardrails + Memory Management         │
-│          (طبقة الحماية + إدارة الذاكرة)                 │
-├───────────────────────────────────────────────────────┤
-│              FastAPI + WebSocket Server                 │
-├───────────────────────────────────────────────────────┤
-│          Arabic RTL Web Interface (الواجهة العربية)      │
-└───────────────────────────────────────────────────────┘
-```
-
-## ✨ الميزات الرئيسية
-
-### 1. 🤖 نظام الوكلاء المتعددين (Multi-Agent System)
-| الوكيل | المسؤولية |
-|--------|----------|
-| **Content Creator Agent** | توليد ديناميكي وحصري لأسماء عربية فريدة في كل جلسة عبر LLM (لا يوجد كلمات مخزنة محلياً) |
-| **Game Master Agent** | إدارة اللوحة وتوزيع الأدوار السرية وتغيير حجم اللوحة |
-| **AI Spymaster** | قائد الفريق المنافس - يولّد الشفرات |
-| **AI Operative** | عميل الفريق المنافس - يخمّن الكلمات (معزول تقنياً) |
-
-### 2. 🔒 العزل التقني (Strict Process Isolation)
-- **AI Spymaster**: يملك وصولاً كاملاً إلى الخريطة السرية (أنواع جميع البطاقات)
-- **AI Operative**: لا يرى إلا اللوحة العامة + الشفرة المعطاة
-- **لا يوجد أي مسار** لتسريب بيانات القائد إلى العميل
-
-### 3. 🧠 ثلاثة مستويات ذكاء
-| المستوى | الوصف | الأنماط المستخدمة |
-|---------|-------|------------------|
-| **Basic (عادي)** | منطق بسيط، ربط كلمة واحدة | Simple Reasoning |
-| **Intermediate (متوسط)** | تحليل + ذاكرة، ربط 2-3 كلمات | Reflection + ReAct + Memory |
-| **Advanced (متقدم)** | سلاسل التفكير العميق | Chain-of-Thought + Planning + ReAct + Reflection |
-
-### 4. 👤 Human-in-the-Loop Governance
-- **قائد بشري**: أعط شفرات لعميل AI يخمن نيابةً عنك
-- **عميل بشري**: استقبل شفرات من قائد AI وخمّن الكلمات
-
-### 5. 📐 أحجام لوحة متعددة
-| الحجم | البطاقات | التوزيع |
-|-------|---------|--------|
-| صغير | 8 | أحمر: 3, أزرق: 2, محايد: 2, قاتل: 1 |
-| متوسط | 16 | أحمر: 6, أزرق: 5, محايد: 4, قاتل: 1 |
-| كلاسيكي | 25 | أحمر: 9, أزرق: 8, محايد: 7, قاتل: 1 |
-
-### 6. 🛡️ Safety Guardrails (طبقة الحماية)
-- التحقق من أن الشفرة كلمة واحدة فقط
-- منع استخدام كلمات اللوحة كشفرات
-- التحقق من التطابق الجزئي مع الكلمات
-- قائمة كلمات محظورة
-- التحقق من صلاحية الرقم
-
-### 7. 🧪 Evaluation Framework
-- تتبع نسب الفوز لكل مستوى صعوبة
-- إحصائيات حسب حجم اللوحة
-- قياس دقة تخمينات AI
-- تقارير تفصيلية
+**Codenames** is a word-association party game for two teams — **Red** vs **Blue**.  
+The original game requires 4 players. Since you can't play single-player, this project uses **AI agents** to fill the remaining roles so you can enjoy the full experience solo.
 
 ---
 
-## 📁 هيكل المشروع
+## 🎯 Game Rules
 
-```
-capstone/
-├── config.py               # التكوين المركزي
-├── game_state.py            # نموذج حالة اللعبة والذاكرة
-├── guardrails.py            # طبقة الحماية (Safety Guardrails)
-├── game_orchestrator.py     # مُنسّق LangGraph
-├── evaluation.py            # إطار التقييم
-├── server.py                # خادم FastAPI + WebSocket
-├── requirements.txt         # المتطلبات
-├── .env.example             # نموذج متغيرات البيئة
-├── agents/
-│   ├── __init__.py
-│   ├── content_agent.py     # وكيل إنشاء المحتوى (LLM-based - 100% Dynamic)
-│   ├── game_master.py       # وكيل مدير اللعبة
-│   └── ai_team.py           # وكلاء الفريق المنافس
-└── static/
-    ├── index.html           # الواجهة الرئيسية (RTL)
-    ├── styles.css           # التصميم الاحترافي
-    └── app.js               # منطق الواجهة
-```
+1. A board of **word cards** is laid out (15, 25, or 35 cards).
+2. Each team has a **Spymaster** (gives clues) and an **Operative / Spy** (guesses words).
+3. The Spymaster sees a **secret map** showing which cards belong to which team.
+4. The Spymaster gives a **one-word clue** and a **number** (how many cards relate to that clue).
+5. The Operative guesses up to **number + 1** words per turn.
+6. Guessing the **Assassin card** = **instant loss**.
+7. The first team to reveal **all their cards** wins.
+8. **Red team always goes first** (and gets +1 card to compensate).
 
 ---
 
-## 🚀 التشغيل
+## 🃏 Card Modes & Distribution
 
-### 1. تثبيت المتطلبات
-```bash
-pip install -r requirements.txt
-```
+### 15-Card Mode (Small / Fast)
 
-### 2. إعداد مفتاح API
-```bash
-cp .env.example .env
-# عدّل .env وأضف مفتاح OpenAI API
-```
+| Type | Count |
+|------|-------|
+| 🔴 Starting Team (Red) | **5** |
+| 🔵 Other Team (Blue) | **4** |
+| ⚪ Neutral | **5** |
+| ⚫ Assassin | **1** |
+| **Total** | **15** |
 
-### 3. تشغيل الخادم
-```bash
-python server.py
-```
+### 25-Card Mode (Classic)
 
-### 4. فتح اللعبة
-افتح المتصفح على: `http://localhost:8000`
+| Type | Count |
+|------|-------|
+| 🔴 Starting Team (Red) | **9** |
+| 🔵 Other Team (Blue) | **8** |
+| ⚪ Neutral | **7** |
+| ⚫ Assassin | **1** |
+| **Total** | **25** |
 
----
+### 35-Card Mode (Large)
 
-## 🔧 أنماط التصميم المستخدمة (Design Patterns)
-
-### LangGraph Workflow
-```
-Initialize → Check Turn → [Human/AI Spymaster] → Check Turn
-                       → [Human/AI Operative] → Process Guess
-                       → End Turn → Check Turn
-                       → Game Over → END
-```
-
-### Reflection Pattern
-يُستخدم في المستوى المتوسط والمتقدم لتحليل الوضع الحالي قبل اتخاذ القرار.
-
-### ReAct Pattern (Reasoning + Acting)
-يُستخدم في جميع المستويات لربط التفكير بالأفعال.
-
-### Planning Pattern
-يُستخدم في المستوى المتقدم لوضع خطط متعددة واختيار الأفضل.
-
-### Chain-of-Thought
-يُستخدم في المستوى المتقدم لتحليل الشفرات بعمق عبر خطوات متسلسلة.
-
-### Memory Management
-- **ذاكرة قصيرة المدى**: آخر 10 أحداث
-- **ذاكرة طويلة المدى**: أنماط مهمة وتعلمات (auto-promoted)
+| Type | Count |
+|------|-------|
+| 🔴 Starting Team (Red) | **13** |
+| 🔵 Other Team (Blue) | **12** |
+| ⚪ Neutral | **9** |
+| ⚫ Assassin | **1** |
+| **Total** | **35** |
 
 ---
 
-## 📊 تشغيل التقييم التلقائي
+## 🎮 What the Player Can Do
 
-```python
-from evaluation import run_automated_evaluation
-from config import Difficulty, BoardSize
-
-import asyncio
-metrics = asyncio.run(run_automated_evaluation(
-    num_games=10,
-    difficulty=Difficulty.MEDIUM,
-    board_size=BoardSize.LARGE,
-))
-```
+- **Choose a team** — Red or Blue
+- **Choose a role** — Spymaster (give clues) or Spy/Operative (guess words)
+- **Pick a language** — Arabic or English
+- **Pick a board size** — 15 (fast), 25 (classic), or 35 (large)
+- **Pick a difficulty** — Easy, Medium, or Hard
+- **Choose word category** — Random generation, or a specific category (e.g., Saudi football players, European countries, animals, etc.)
 
 ---
 
-## 🛠️ التقنيات المستخدمة
+## 🤖 AI Agents (4 Total)
 
-| التقنية | الاستخدام |
-|---------|----------|
-| **LangGraph** | إدارة سير عمل الوكلاء |
-| **LangChain** | التكامل مع نماذج اللغة |
-| **OpenAI GPT-4o-mini** | محرك الذكاء الاصطناعي |
-| **FastAPI** | الخادم الخلفي |
-| **WebSocket** | التحديثات المباشرة |
-| **Pydantic** | نمذجة البيانات |
-| **HTML/CSS/JS** | واجهة الويب (RTL) |
+The game is powered by **four AI agents**:
 
----
+### 1. Card Creator Agent (Pre-Game)
+- Runs **before** the game starts.
+- Generates the word cards for the board.
+- Accepts parameters:
+  - **Language** — Arabic or English
+  - **Difficulty** — Easy, Medium, or Hard
+    - On harder difficulties, card words are more closely related to each other (trickier to distinguish) and the Assassin word is designed to be deceptively similar to team words.
+  - **Category** — Optional specific theme for the words
 
-## 📝 معايير مشروع التخرج المُحققة
+### 2. Opponent Spymaster Agent
+- Acts as the **opposing team's Spymaster**.
+- Has full access to the **secret map** (knows all card types).
+- Generates clever one-word clues and a number for its Operative.
 
-- [x] ✅ نظام وكلاء متعددين باستخدام LangGraph
-- [x] ✅ وكيل إنشاء محتوى ديناميكي (LLM-based)
-- [x] ✅ وكيل مدير لعبة مع أحجام لوحة متعددة
-- [x] ✅ عزل تقني بين القائد والعميل
-- [x] ✅ ثلاثة مستويات ذكاء (Basic / Intermediate / Advanced)
-- [x] ✅ Human-in-the-Loop (قائد أو عميل بشري)
-- [x] ✅ واجهة ويب RTL عربية احترافية
-- [x] ✅ عرض عمليات تفكير الوكلاء (Reflection, ReAct, Planning)
-- [x] ✅ إدارة ذاكرة قصيرة وطويلة المدى
-- [x] ✅ طبقة حماية (Safety Guardrails)
-- [x] ✅ إطار تقييم الأداء ونسب الفوز
-- [x] ✅ سلاسل التفكير (Chain-of-Thought)
-- [x] ✅ WebSocket للتحديثات المباشرة
+### 3. Opponent Operative Agent
+- Acts as the **opposing team's Operative / Spy**.
+- Can only see the **public board** and the clue given by its Spymaster.
+- **Strictly isolated** — has no access to the secret map.
+
+### 4. Your Teammate Agent
+- Fills the role you **did not** choose.
+- If you are the **Spymaster** → this agent is your **Operative** (guesses based on your clues).
+- If you are the **Operative** → this agent is your **Spymaster** (gives you clues).
 
 ---
 
-**تم التطوير كمشروع تخرج متقدم | Tuwaiq Academy Capstone Project**
+## 💬 In-Game Chat
+
+The AI agents have personality — they **comment on the game** in a fun, competitive way:
+
+- Trash talk and encouragement (e.g., *"I will beat you!"*)
+- Arabic expressions (e.g., *"كفووو"*, *"يا سلام"*)
+- Reactions to good or bad guesses
+- Team banter between agents
+
+---
+
+## 📋 Agent Log Panel
+
+A dedicated **log panel** shows what the AI agents are doing behind the scenes:
+
+- **Agent reasoning** — how the Spymaster picks clues, how the Operative decides guesses
+- **Reflection pattern** — agents reflect on previous turns to improve strategy
+- **Turn-by-turn tracking** — full history of actions and decisions
+- **Toggle visibility** — the log panel can be **shown or hidden** at any time
+
+---
+
+## 📝 Requirements Summary
+
+| Requirement | Details |
+|-------------|---------|
+| Teams | Red vs Blue |
+| Roles | Spymaster & Operative per team |
+| Board Sizes | 15 / 25 / 35 cards |
+| Languages | Arabic, English |
+| Difficulty | Easy, Medium, Hard |
+| Word Categories | Random or themed (animals, countries, etc.) |
+| AI Agents | 4 — Card Creator, Opponent Spymaster, Opponent Operative, Teammate |
+| Agent Chat | Fun in-game commentary from agents |
+| Agent Logs | Toggleable panel showing agent reasoning, reflection, and tracking |
+| Win Condition | First team to reveal all their cards, or opponent guesses the Assassin |
