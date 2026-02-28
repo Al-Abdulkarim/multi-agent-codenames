@@ -30,7 +30,7 @@ class AIOperative:
         team: str,
         difficulty: str,
         api_key: str,
-        model: str = "gemini/gemini-2.0-flash",
+        model: str = "gemini/gemini-2.5-flash",
     ):
         self.team = team
         self.difficulty = difficulty

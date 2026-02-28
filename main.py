@@ -37,13 +37,13 @@ def run_cli(args):
     from cli.game_cli import run_cli
 
     run_cli(
-        api_key=api_key,
-        language=args.lang,
-        board_size=int(args.size),
+        lang=args.lang,
+        size=int(args.size),
         difficulty=args.difficulty,
-        human_team=args.team,
-        human_role=args.role,
+        team=args.team,
+        role=args.role,
         category=args.category,
+        api_key=api_key,
     )
 
 

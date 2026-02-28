@@ -140,8 +140,11 @@ def run_cli(
                     print(f"\n{Fore.YELLOW}🤖 AI Operative is guessing …{Style.RESET_ALL}")
                     guesses = mgr.run_ai_guess()
                     for g in guesses:
-                        correct_mark = "✅" if g.word in [c.word for c in s.board if c.card_type.value == s.current_team.value] else "❌"
-                        print(f"  → {g.word} (confidence: {g.confidence:.0%}) {correct_mark}")
+                        word = g["word"]
+                        conf = g.get("confidence", 0)
+                        correct = g.get("correct", False)
+                        correct_mark = "✅" if correct else "❌"
+                        print(f"  → {word} (confidence: {conf:.0%}) {correct_mark}")
 
             else:
                 # Human is Operative → guess

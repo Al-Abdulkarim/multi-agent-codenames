@@ -80,6 +80,8 @@ def _state_payload(mgr: GameManager) -> dict[str, Any]:
         "game_over": s.game_over,
         "winner": s.winner.value if s.winner else None,
         "whose_turn": mgr.whose_turn(),
+        "chat_messages": mgr.chat_messages,
+        "agent_logs": mgr.agent_logs,
     }
 
 
@@ -93,6 +95,14 @@ async def _run_ai_turns(game_id: str) -> None:
 
         # Run the blocking AI turn off the event loop
         turn_result = await asyncio.to_thread(mgr.run_ai_turn)
+
+        # Broadcast chat messages generated during the turn
+        for chat in mgr.chat_messages[-5:]:
+            await ws_manager.broadcast(game_id, "chat_message", chat)
+
+        # Broadcast agent logs generated during the turn
+        for log_entry in mgr.agent_logs[-5:]:
+            await ws_manager.broadcast(game_id, "agent_log", log_entry)
 
         await ws_manager.broadcast(game_id, "ai_turn_complete", turn_result)
         await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
@@ -154,6 +164,19 @@ async def submit_clue(req: ClueRequest):
         await ws_manager.broadcast(req.game_id, "clue_given", result)
         await ws_manager.broadcast(req.game_id, "state_update", _state_payload(mgr))
 
+        # Generate teammate chat reaction to human clue
+        try:
+            chat = await asyncio.to_thread(
+                mgr._generate_chat,
+                "clue_given",
+                {"clue": req.clue, "number": req.number, "team": mgr.state.human_team.value},
+                "operative", mgr.state.human_team.value,
+            )
+            if chat:
+                await ws_manager.broadcast(req.game_id, "chat_message", chat)
+        except Exception:
+            pass
+
         # If AI teammate is the Operative, run its guesses
         if not mgr.is_human_turn() and not mgr.state.game_over:
             asyncio.create_task(_run_ai_turns(req.game_id))
@@ -172,6 +195,21 @@ async def submit_guess(req: GuessRequest):
     if result.get("success"):
         await ws_manager.broadcast(req.game_id, "guess_made", result)
         await ws_manager.broadcast(req.game_id, "state_update", _state_payload(mgr))
+
+        # Generate opponent chat reaction to human guess
+        event = "good_guess" if result.get("correct") else ("assassin" if result.get("revealed") == "assassin" else "bad_guess")
+        opponent_team = "blue" if mgr.state.human_team.value == "red" else "red"
+        try:
+            chat = await asyncio.to_thread(
+                mgr._generate_chat,
+                event,
+                {"word": req.word, "correct": result.get("correct"), "team": opponent_team},
+                "spymaster", opponent_team,
+            )
+            if chat:
+                await ws_manager.broadcast(req.game_id, "chat_message", chat)
+        except Exception:
+            pass
 
         # If turn switched to opponent, run their full turn
         if not mgr.is_human_turn() and not mgr.state.game_over:

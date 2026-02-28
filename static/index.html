@@ -21,11 +21,6 @@
             <button class="btn-lang" data-lang="ar">العربية</button>
         </div>
 
-        <div class="form-group">
-            <label id="lbl-api">API Key</label>
-            <input type="password" id="api-key" placeholder="Google API Key" />
-        </div>
-
         <div class="form-row">
             <div class="form-group">
                 <label id="lbl-size">Board Size</label>
@@ -67,7 +62,7 @@
             </div>
         </div>
 
-        <button id="btn-start" class="btn-primary" disabled>
+        <button id="btn-start" class="btn-primary">
             <span id="btn-start-text">Start Game</span>
             <span id="btn-start-loading" class="spinner hidden"></span>
         </button>
@@ -83,39 +78,61 @@
         <div class="score blue-score"><span class="dot blue"></span> <span id="blue-count">0</span></div>
     </header>
 
-    <!-- board -->
-    <div id="board" class="board"></div>
+    <!-- main game area -->
+    <div class="game-body">
+        <!-- LEFT: Agent Log Panel (toggleable) -->
+        <aside id="log-panel" class="log-panel">
+            <div class="panel-header">
+                <h3 id="lbl-log">🧠 Agent Logs</h3>
+                <button id="btn-toggle-log" class="btn-toggle" title="Hide logs">✕</button>
+            </div>
+            <ul id="log-list"></ul>
+        </aside>
 
-    <!-- clue display -->
-    <div id="clue-display" class="clue-display hidden">
-        <span id="clue-text"></span>
-    </div>
+        <!-- CENTER: Board -->
+        <div class="board-area">
+            <div id="board" class="board"></div>
 
-    <!-- action bar -->
-    <div id="action-bar" class="action-bar hidden">
-        <!-- spymaster clue form -->
-        <div id="clue-form" class="clue-form hidden">
-            <input type="text" id="clue-input" placeholder="Clue word" />
-            <input type="number" id="clue-number" min="0" max="9" value="1" />
-            <button id="btn-clue" class="btn-primary">Give Clue</button>
+            <!-- clue display -->
+            <div id="clue-display" class="clue-display hidden">
+                <span id="clue-text"></span>
+            </div>
+
+            <!-- action bar -->
+            <div id="action-bar" class="action-bar hidden">
+                <!-- spymaster clue form -->
+                <div id="clue-form" class="clue-form hidden">
+                    <input type="text" id="clue-input" placeholder="Clue word" />
+                    <input type="number" id="clue-number" min="0" max="9" value="1" />
+                    <button id="btn-clue" class="btn-primary small">Give Clue</button>
+                </div>
+                <!-- operative controls -->
+                <div id="guess-controls" class="guess-controls hidden">
+                    <button id="btn-pass" class="btn-secondary">Pass</button>
+                </div>
+            </div>
+
+            <!-- AI thinking bar -->
+            <div id="ai-thinking" class="ai-thinking hidden">
+                <div class="thinking-bar"></div>
+                <span id="ai-thinking-text">AI is thinking…</span>
+            </div>
         </div>
-        <!-- operative controls -->
-        <div id="guess-controls" class="guess-controls hidden">
-            <button id="btn-pass" class="btn-secondary">Pass</button>
-        </div>
+
+        <!-- RIGHT: Chat Panel -->
+        <aside id="chat-panel" class="chat-panel">
+            <div class="panel-header">
+                <h3 id="lbl-chat">💬 Agent Chat</h3>
+            </div>
+            <div id="chat-messages" class="chat-messages"></div>
+        </aside>
     </div>
 
-    <!-- AI thinking bar -->
-    <div id="ai-thinking" class="ai-thinking hidden">
-        <div class="thinking-bar"></div>
-        <span>AI is thinking…</span>
+    <!-- floating toggle buttons -->
+    <div class="floating-toggles">
+        <button id="btn-show-log" class="btn-float hidden" title="Show agent logs">🧠</button>
+        <button id="btn-show-chat" class="btn-float hidden" title="Show chat">💬</button>
     </div>
-
-    <!-- event log sidebar -->
-    <aside id="event-log" class="event-log">
-        <h3 id="lbl-log">Game Log</h3>
-        <ul id="log-list"></ul>
-    </aside>
 
     <!-- game over overlay -->
     <div id="game-over" class="game-over-overlay hidden">

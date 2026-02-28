@@ -2,10 +2,12 @@
 
 This is pure Python logic (not an LLM agent).  It owns the GameState and
 delegates to the AI agent classes when it is an AI player's turn.
+Now includes chat commentary and agent-log tracking.
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 import logging
 from typing import Any
@@ -16,6 +18,7 @@ from models.game_state import GameState, Clue, Guess, TurnRecord
 from agents.card_creator import CardCreatorAgent
 from agents.spymaster import AISpymaster, ClueOutput
 from agents.operative import AIOperative, GuessOutput
+from agents.chat_agent import ChatAgent
 from game.board import create_board, reveal_card
 from game.validators import validate_clue, validate_guess
 
@@ -32,10 +35,59 @@ class GameManager:
     *   ``pass_turn()`` – end the current turn early
     """
 
-    def __init__(self, api_key: str, model: str = "gemini/gemini-2.0-flash"):
+    def __init__(self, api_key: str, model: str = "gemini/gemini-2.5-flash"):
         self.api_key = api_key
         self.model = model
         self.state: GameState | None = None
+
+        # Chat commentary agent
+        self.chat_agent = ChatAgent(api_key=api_key)
+
+        # Agent logs — list of {timestamp, agent, action, detail, reflection}
+        self.agent_logs: list[dict] = []
+        # Chat messages — list of {timestamp, agent, team, message}
+        self.chat_messages: list[dict] = []
+
+    # ── logging helpers ─────────────────────────────────────────────
+
+    def _add_log(self, agent: str, action: str, detail: str, reflection: str = "") -> dict:
+        entry = {
+            "timestamp": time.time(),
+            "agent": agent,
+            "action": action,
+            "detail": detail,
+            "reflection": reflection,
+        }
+        self.agent_logs.append(entry)
+        return entry
+
+    def _add_chat(self, agent: str, team: str, message: str) -> dict:
+        entry = {
+            "timestamp": time.time(),
+            "agent": agent,
+            "team": team,
+            "message": message,
+        }
+        self.chat_messages.append(entry)
+        return entry
+
+    def _generate_chat(
+        self, event_type: str, context: dict, agent_role: str, agent_team: str
+    ) -> dict | None:
+        """Generate a chat message and return the entry."""
+        try:
+            lang = self.state.config.language.value if self.state else "en"
+            msg = self.chat_agent.react(
+                event_type=event_type,
+                context=context,
+                language=lang,
+                agent_role=agent_role,
+                agent_team=agent_team,
+            )
+            return self._add_chat(agent_role, agent_team, msg)
+        except Exception as e:
+            log.warning("Chat generation failed: %s", e)
+            return None
 
     # ── game setup ──────────────────────────────────────────────────
 
@@ -54,6 +106,8 @@ class GameManager:
             config.category,
         )
 
+        self._add_log("CardCreator", "starting", f"Generating {config.size.value} words (lang={config.language.value}, diff={config.difficulty.value}, cat={config.category})")
+
         creator = CardCreatorAgent(api_key=self.api_key, model=self.model)
         words = creator.generate_words(
             count=config.size.value,
@@ -61,6 +115,8 @@ class GameManager:
             category=config.category,
             difficulty=config.difficulty.value,
         )
+
+        self._add_log("CardCreator", "completed", f"Generated {len(words)} words", "Words look thematically consistent")
 
         board = create_board(words, config, starting_team=TeamColor.RED)
 
@@ -177,11 +233,15 @@ class GameManager:
 
     # ── AI actions ──────────────────────────────────────────────────
 
-    def run_ai_clue(self) -> ClueOutput:
-        """Have the AI Spymaster generate a clue and record it."""
+    def run_ai_clue(self) -> dict[str, Any]:
+        """Have the AI Spymaster generate a clue and record it.  Returns dict with clue + logs + chat."""
         s = self.state
+        team = s.current_team.value
+
+        self._add_log(f"{team} Spymaster", "thinking", "Analyzing board for best clue...", "Evaluating word relationships and risks")
+
         spymaster = AISpymaster(
-            team=s.current_team.value,
+            team=team,
             difficulty=s.config.difficulty.value,
             api_key=self.api_key,
             model=self.model,
@@ -190,48 +250,127 @@ class GameManager:
             spymaster_board=s.get_spymaster_board(),
             history=[t.model_dump() for t in s.turns_history],
         )
+
+        self._add_log(
+            f"{team} Spymaster", "clue_generated",
+            f"Clue: '{clue.clue}' for {clue.number}",
+            f"Targeting {clue.number} words with this association"
+        )
+
         # record via the same validation path
         result = self.submit_human_clue(clue.clue, clue.number)
         if not result.get("success"):
-            # guardrail passed in agent but failed in validator — retry once
             log.warning("AI clue validation failed: %s — retrying", result.get("error"))
+            self._add_log(f"{team} Spymaster", "retry", f"Clue rejected: {result.get('error')}", "Generating alternative clue")
             clue = spymaster.generate_clue(
                 spymaster_board=s.get_spymaster_board(),
                 history=[t.model_dump() for t in s.turns_history],
             )
             self.submit_human_clue(clue.clue, clue.number)
-        return clue
 
-    def run_ai_guess(self) -> list[GuessOutput]:
-        """Have the AI Operative guess iteratively until turn ends."""
+        # Generate chat comment
+        chat_entry = self._generate_chat(
+            "clue_given",
+            {"clue": clue.clue, "number": clue.number, "team": team},
+            "spymaster", team,
+        )
+
+        return {
+            "clue": clue.clue,
+            "number": clue.number,
+            "log": self.agent_logs[-1] if self.agent_logs else None,
+            "chat": chat_entry,
+        }
+
+    def run_ai_guess(self) -> list[dict[str, Any]]:
+        """Have the AI Operative guess iteratively until turn ends.  Returns list of dicts with guess + logs + chat."""
         s = self.state
+        team = s.current_team.value
+
         operative = AIOperative(
-            team=s.current_team.value,
+            team=team,
             difficulty=s.config.difficulty.value,
             api_key=self.api_key,
             model=self.model,
         )
-        guesses: list[GuessOutput] = []
+        guesses: list[dict[str, Any]] = []
+
         while s.guesses_remaining > 0 and not s.game_over:
+            self._add_log(
+                f"{team} Operative", "thinking",
+                f"Considering guess for clue '{s.turns_history[-1].clue.word}'",
+                "Evaluating word associations on the board"
+            )
+
             guess = operative.make_guess(
                 clue=s.turns_history[-1].clue.word,
                 number=s.turns_history[-1].clue.number,
                 public_board=s.get_public_board(),
                 history=[t.model_dump() for t in s.turns_history],
             )
+
+            self._add_log(
+                f"{team} Operative", "guess_made",
+                f"Guessed '{guess.word}' (confidence: {guess.confidence:.0%})",
+                guess.reasoning,
+            )
+
             result = self.submit_human_guess(guess.word)
-            guesses.append(guess)
-            if not result.get("correct", False):
+            correct = result.get("correct", False)
+
+            # Generate chat reaction
+            event = "good_guess" if correct else ("assassin" if result.get("revealed") == "assassin" else "bad_guess")
+            chat_entry = self._generate_chat(
+                event,
+                {"word": guess.word, "correct": correct, "team": team},
+                "operative", team,
+            )
+
+            guesses.append({
+                "word": guess.word,
+                "confidence": guess.confidence,
+                "reasoning": guess.reasoning,
+                "correct": correct,
+                "revealed": result.get("revealed"),
+                "log": self.agent_logs[-1] if self.agent_logs else None,
+                "chat": chat_entry,
+            })
+
+            if not correct:
                 break
+
         return guesses
 
     def run_ai_turn(self) -> dict[str, Any]:
-        """Run a complete AI turn (clue + guesses).  Returns summary."""
-        clue = self.run_ai_clue()
+        """Run a complete AI turn (clue + guesses).  Returns summary with chat and logs."""
+        # Taunt at start of turn
+        s = self.state
+        team = s.current_team.value
+        opponent_team = "blue" if team == "red" else "red"
+
+        # Opponent taunt
+        taunt = self._generate_chat(
+            "taunt" if s.red_remaining > 2 and s.blue_remaining > 2 else "turn_start",
+            {"team": team, "red_left": s.red_remaining, "blue_left": s.blue_remaining},
+            "spymaster", team,
+        )
+
+        clue_result = self.run_ai_clue()
         guesses = self.run_ai_guess()
+
+        # Post-turn status chat from other team
+        my_remaining = s.red_remaining if team == "red" else s.blue_remaining
+        opp_remaining = s.blue_remaining if team == "red" else s.red_remaining
+        status_event = "winning" if my_remaining < opp_remaining else "losing"
+        self._generate_chat(
+            status_event,
+            {"team": opponent_team, "my_remaining": opp_remaining, "opp_remaining": my_remaining},
+            "operative", opponent_team,
+        )
+
         return {
-            "clue": {"word": clue.clue, "number": clue.number},
-            "guesses": [g.model_dump() for g in guesses],
+            "clue": {"word": clue_result["clue"], "number": clue_result["number"]},
+            "guesses": guesses,
             "game_over": self.state.game_over,
             "winner": self.state.winner.value if self.state.winner else None,
         }
