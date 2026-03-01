@@ -18,12 +18,15 @@ from tools.board_tools import analyze_board
 
 # ── structured output ───────────────────────────────────────────────────
 
+
 class ClueOutput(BaseModel):
     clue: str
     number: int
+    reflection: str  # Explicit thought process for the logs
 
 
 # ── agent wrapper ───────────────────────────────────────────────────────
+
 
 class AISpymaster:
     """Creates and runs a Spymaster crew that produces a clue."""
@@ -31,17 +34,19 @@ class AISpymaster:
     BACKSTORIES = {
         "easy": (
             "You are a beginner Spymaster. Give simple, safe clues that "
-            "link to just 1 of your team's words. Avoid any risk."
+            "link to just 1 of your team's words. Avoid any risk. CRITICAL: "
+            "Do not communicate secret info beyond the clue and number. No cheating."
         ),
         "medium": (
             "You are an experienced Spymaster. Find clever clues that link "
             "2 of your team's words while carefully avoiding opponent and "
-            "assassin words."
+            "assassin words. CRITICAL: No extra information allowed. No cheating."
         ),
         "hard": (
             "You are a master Spymaster. Find brilliant clues linking 3-4 "
             "words. Analyse every possible interpretation and risk before "
-            "committing. Think multiple turns ahead."
+            "committing. Think multiple turns ahead. CRITICAL: No extra info. "
+            "No cheating."
         ),
     }
 
@@ -51,11 +56,13 @@ class AISpymaster:
         self,
         team: str,
         difficulty: str,
+        language: str,
         api_key: str,
         model: str = "gemini/gemini-2.5-flash",
     ):
         self.team = team
         self.difficulty = difficulty
+        self.language = language
         self.llm = LLM(model=model, api_key=api_key, temperature=0.7)
 
     # ── factory ─────────────────────────────────────────────────────
@@ -65,7 +72,7 @@ class AISpymaster:
             role=f"Codenames Spymaster for {self.team} team",
             goal=(
                 "Give the best one-word clue connecting as many of your "
-                "team's unrevealed words as possible while avoiding the assassin"
+                "team's unrevealed words as possible"
             ),
             backstory=self.BACKSTORIES.get(self.difficulty, self.BACKSTORIES["medium"]),
             llm=self.llm,
@@ -81,34 +88,38 @@ class AISpymaster:
         self,
         spymaster_board: list[dict],
         history: list[dict],
+        category: str | None = None,
     ) -> ClueOutput:
-        """Return a :class:`ClueOutput` with a single-word clue and number."""
-        agent = self._build_agent()
+        """Return a :class:`ClueOutput` using direct LLM call for speed."""
         target = self.TARGET_WORDS.get(self.difficulty, 2)
-
         board_json = json.dumps(spymaster_board, ensure_ascii=False)
+        lang_label = "Arabic" if self.language == "ar" else "English"
 
-        task = Task(
-            description=(
-                f"You are the {self.team} Spymaster.\n"
-                f"Board (you can see all types): {board_json}\n"
-                f"Previous turns: {json.dumps(history, ensure_ascii=False, default=str)}\n"
-                f"Target connecting {target} of your team's unrevealed words.\n"
-                f"Give a one-word clue and the number of words it relates to.\n"
-                f"NEVER use a word that is on the board. Avoid the assassin at all costs."
-            ),
-            expected_output="JSON with 'clue' (single word) and 'number' (integer)",
-            agent=agent,
-            output_pydantic=ClueOutput,
-            guardrail_max_retries=3,
+        prompt = (
+            f"You are a Codenames Spymaster on the {self.team} team. Difficulty: {self.difficulty}.\n"
+            f"Board: {board_json}\n"
+            f"Previous turns: {json.dumps(history, ensure_ascii=False, default=str)}\n"
+            f"Task: Give one-word clue in {lang_label} for {target} words.\n"
+            f"IMPORTANT: The clue word MUST be in {lang_label}. The reflection MUST also be in {lang_label}.\n"
+            f"Avoid opponent, neutral, and assassin words.\n"
+            f"STRICT: No words from the board. No category words like '{category}'.\n"
+            f'Format: JSON {{"clue": "...", "number": {target}, "reflection": "..."}}'
         )
 
-        crew = Crew(
-            agents=[agent],
-            tasks=[task],
-            process=Process.sequential,
-            verbose=False,
-            memory=True,
-        )
-        result = crew.kickoff()
-        return result.pydantic
+        response = self.llm.call([{"role": "user", "content": prompt}])
+        try:
+            # Simple extractor for JSON in case of markdown wrapping
+            text = response.strip()
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+
+            data = json.loads(text)
+            return ClueOutput(**data)
+        except Exception:
+            fallback_clue = "رابط" if self.language == "ar" else "link"
+            fallback_refl = (
+                "خطأ في المعالجة" if self.language == "ar" else "Processing error"
+            )
+            return ClueOutput(clue=fallback_clue, number=1, reflection=fallback_refl)

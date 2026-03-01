@@ -23,7 +23,7 @@ def run_server(args):
     from server.app import create_app
 
     app = create_app()
-    print(f"\n🕵️  Codenames server starting on http://localhost:{args.port}")
+    print(f"\nCodenames server starting on http://localhost:{args.port}")
     uvicorn.run(app, host="0.0.0.0", port=args.port)
 
 
@@ -81,13 +81,17 @@ def main():
         default="server",
         help="Run mode (default: server)",
     )
-    parser.add_argument("--port", type=int, default=8000, help="Server port")
+    parser.add_argument("--port", type=int, default=8001, help="Server port")
     parser.add_argument("--api-key", type=str, default=None, help="Google API key")
     parser.add_argument("--lang", choices=["en", "ar"], default="en")
     parser.add_argument("--size", choices=["15", "25", "35"], default="25")
-    parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
+    parser.add_argument(
+        "--difficulty", choices=["easy", "medium", "hard"], default="medium"
+    )
     parser.add_argument("--team", choices=["red", "blue"], default="red")
-    parser.add_argument("--role", choices=["spymaster", "operative"], default="operative")
+    parser.add_argument(
+        "--role", choices=["spymaster", "operative"], default="operative"
+    )
     parser.add_argument("--category", type=str, default=None)
     parser.add_argument("--games", type=int, default=5, help="Number of eval games")
 

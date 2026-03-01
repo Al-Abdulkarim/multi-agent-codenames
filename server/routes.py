@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from models.enums import BoardSize, Difficulty, Language, TeamColor, PlayerRole
@@ -25,32 +26,32 @@ _games: dict[str, GameManager] = {}
 
 # ── request bodies ──────────────────────────────────────────────────────
 
+
 class NewGameRequest(BaseModel):
     board_size: int = 25
     difficulty: str = "medium"
     language: str = "en"
     category: str | None = None
-    human_team: str = "blue"
-    human_role: str = "operative"
+    team: str = "red"  # New UI uses 'team' instead of 'human_team'
+    role: str = "operative"  # New UI uses 'role' instead of 'human_role'
     api_key: str | None = None
 
 
 class ClueRequest(BaseModel):
-    game_id: str
     clue: str
     number: int
 
 
 class GuessRequest(BaseModel):
-    game_id: str
     word: str
 
 
-class PassRequest(BaseModel):
-    game_id: str
+class ChatRequest(BaseModel):
+    message: str
 
 
 # ── helpers ─────────────────────────────────────────────────────────────
+
 
 def _get_game(game_id: str) -> GameManager:
     mgr = _games.get(game_id)
@@ -63,24 +64,49 @@ def _state_payload(mgr: GameManager) -> dict[str, Any]:
     """Build a JSON-serialisable snapshot of the game state."""
     s = mgr.state
     is_spymaster = (
-        s.current_team == s.human_team
-        and s.human_role == PlayerRole.SPYMASTER
+        s.current_team == s.human_team and s.human_role == PlayerRole.SPYMASTER
     )
+
+    # New UI expects 'clue' at top level
+    current_clue = None
+    if s.current_phase == "guess" and s.turns_history:
+        last_turn = s.turns_history[-1]
+        if last_turn.clue:
+            current_clue = {
+                "word": last_turn.clue.word,
+                "number": last_turn.clue.number,
+            }
+
     return {
         "game_id": s.game_id,
-        "board": s.get_spymaster_board() if is_spymaster else s.get_public_board(),
-        "current_team": s.current_team.value,
-        "current_phase": s.current_phase,
+        "board": [
+            {
+                "word": c["word"],
+                "revealed": c["revealed"],
+                "type": c["card_type"],  # UI expects 'type' instead of 'card_type'
+            }
+            for c in (s.get_spymaster_board() if is_spymaster else s.get_public_board())
+        ],
+        "current_turn": s.current_team.value,  # UI expects 'current_turn'
+        "status": "game_over" if s.game_over else "playing",  # UI expects 'status'
         "human_team": s.human_team.value,
         "human_role": s.human_role.value,
         "red_remaining": s.red_remaining,
         "blue_remaining": s.blue_remaining,
+        "clue": current_clue,
         "guesses_remaining": s.guesses_remaining,
         "turns_history": [t.model_dump() for t in s.turns_history],
-        "game_over": s.game_over,
         "winner": s.winner.value if s.winner else None,
         "whose_turn": mgr.whose_turn(),
-        "chat_messages": mgr.chat_messages,
+        "chat_messages": [
+            {
+                "sender": m["agent"].capitalize() if m["agent"] != "human" else "You",
+                "team": m["team"],
+                "message": m["message"],
+                "timestamp": datetime.fromtimestamp(m["timestamp"]).isoformat(),
+            }
+            for m in mgr.chat_messages
+        ],
         "agent_logs": mgr.agent_logs,
     }
 
@@ -91,14 +117,22 @@ async def _run_ai_turns(game_id: str) -> None:
     s = mgr.state
 
     while not s.game_over and not mgr.is_human_turn():
-        await ws_manager.broadcast(game_id, "ai_thinking", {"team": s.current_team.value})
+        await ws_manager.broadcast(
+            game_id, "ai_thinking", {"team": s.current_team.value}
+        )
 
         # Run the blocking AI turn off the event loop
         turn_result = await asyncio.to_thread(mgr.run_ai_turn)
 
         # Broadcast chat messages generated during the turn
         for chat in mgr.chat_messages[-5:]:
-            await ws_manager.broadcast(game_id, "chat_message", chat)
+            payload = {
+                "sender": chat["agent"].capitalize(),
+                "team": chat["team"],
+                "message": chat["message"],
+                "timestamp": datetime.fromtimestamp(chat["timestamp"]).isoformat(),
+            }
+            await ws_manager.broadcast(game_id, "chat_message", payload)
 
         # Broadcast agent logs generated during the turn
         for log_entry in mgr.agent_logs[-5:]:
@@ -109,13 +143,15 @@ async def _run_ai_turns(game_id: str) -> None:
 
         if s.game_over:
             await ws_manager.broadcast(
-                game_id, "game_over",
+                game_id,
+                "game_over",
                 {"winner": s.winner.value if s.winner else None},
             )
             break
 
 
 # ── REST endpoints ──────────────────────────────────────────────────────
+
 
 @router.post("/api/game/new")
 async def new_game(req: NewGameRequest):
@@ -129,18 +165,24 @@ async def new_game(req: NewGameRequest):
         language=Language(req.language),
         category=req.category or None,
     )
-    human_team = TeamColor(req.human_team)
-    human_role = PlayerRole(req.human_role)
+    human_team = TeamColor(req.team)
+    human_role = PlayerRole(req.role)
 
-    mgr = GameManager(api_key=api_key)
-    state = await asyncio.to_thread(mgr.new_game, config, human_team, human_role)
-    _games[state.game_id] = mgr
+    try:
+        mgr = GameManager(api_key=api_key)
+        state = await asyncio.to_thread(mgr.new_game, config, human_team, human_role)
+        _games[state.game_id] = mgr
 
-    # If opponent starts, kick off AI turns in background
-    if not mgr.is_human_turn():
-        asyncio.create_task(_run_ai_turns(state.game_id))
+        # If opponent starts, kick off AI turns in background
+        if not mgr.is_human_turn():
+            asyncio.create_task(_run_ai_turns(state.game_id))
 
-    return _state_payload(mgr)
+        return _state_payload(mgr)
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/api/game/{game_id}/state")
@@ -152,90 +194,148 @@ async def get_state(game_id: str):
     return _state_payload(mgr)
 
 
-@router.post("/api/game/clue")
-async def submit_clue(req: ClueRequest):
+@router.post("/api/game/{game_id}/clue")
+async def submit_clue(game_id: str, req: ClueRequest):
     try:
-        mgr = _get_game(req.game_id)
+        mgr = _get_game(game_id)
     except ValueError as e:
         return {"error": str(e)}
 
+    if not mgr.is_human_turn():
+        return {"success": False, "error": "Not your turn"}
+
     result = mgr.submit_human_clue(req.clue, req.number)
     if result.get("success"):
-        await ws_manager.broadcast(req.game_id, "clue_given", result)
-        await ws_manager.broadcast(req.game_id, "state_update", _state_payload(mgr))
+        await ws_manager.broadcast(game_id, "clue_given", result)
+        await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
 
         # Generate teammate chat reaction to human clue
         try:
             chat = await asyncio.to_thread(
                 mgr._generate_chat,
                 "clue_given",
-                {"clue": req.clue, "number": req.number, "team": mgr.state.human_team.value},
-                "operative", mgr.state.human_team.value,
+                {
+                    "clue": req.clue,
+                    "number": req.number,
+                    "team": mgr.state.human_team.value,
+                },
+                "operative",
+                mgr.state.human_team.value,
             )
             if chat:
-                await ws_manager.broadcast(req.game_id, "chat_message", chat)
+                payload = {
+                    "sender": chat["agent"].capitalize(),
+                    "team": chat["team"],
+                    "message": chat["message"],
+                    "timestamp": datetime.fromtimestamp(chat["timestamp"]).isoformat(),
+                }
+                await ws_manager.broadcast(game_id, "chat_message", payload)
         except Exception:
             pass
 
         # If AI teammate is the Operative, run its guesses
         if not mgr.is_human_turn() and not mgr.state.game_over:
-            asyncio.create_task(_run_ai_turns(req.game_id))
+            asyncio.create_task(_run_ai_turns(game_id))
 
-    return result
+    return _state_payload(mgr) if result.get("success") else result
 
 
-@router.post("/api/game/guess")
-async def submit_guess(req: GuessRequest):
+@router.post("/api/game/{game_id}/guess")
+async def submit_guess(game_id: str, req: GuessRequest):
     try:
-        mgr = _get_game(req.game_id)
+        mgr = _get_game(game_id)
     except ValueError as e:
         return {"error": str(e)}
 
+    if not mgr.is_human_turn():
+        return {"success": False, "error": "Not your turn"}
+
     result = mgr.submit_human_guess(req.word)
     if result.get("success"):
-        await ws_manager.broadcast(req.game_id, "guess_made", result)
-        await ws_manager.broadcast(req.game_id, "state_update", _state_payload(mgr))
+        await ws_manager.broadcast(game_id, "guess_made", result)
+        await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
 
         # Generate opponent chat reaction to human guess
-        event = "good_guess" if result.get("correct") else ("assassin" if result.get("revealed") == "assassin" else "bad_guess")
+        event = (
+            "good_guess"
+            if result.get("correct")
+            else ("assassin" if result.get("revealed") == "assassin" else "bad_guess")
+        )
         opponent_team = "blue" if mgr.state.human_team.value == "red" else "red"
         try:
             chat = await asyncio.to_thread(
                 mgr._generate_chat,
                 event,
-                {"word": req.word, "correct": result.get("correct"), "team": opponent_team},
-                "spymaster", opponent_team,
+                {
+                    "word": req.word,
+                    "correct": result.get("correct"),
+                    "team": opponent_team,
+                },
+                "spymaster",
+                opponent_team,
             )
             if chat:
-                await ws_manager.broadcast(req.game_id, "chat_message", chat)
+                payload = {
+                    "sender": chat["agent"].capitalize(),
+                    "team": chat["team"],
+                    "message": chat["message"],
+                    "timestamp": datetime.fromtimestamp(chat["timestamp"]).isoformat(),
+                }
+                await ws_manager.broadcast(game_id, "chat_message", payload)
         except Exception:
             pass
 
         # If turn switched to opponent, run their full turn
         if not mgr.is_human_turn() and not mgr.state.game_over:
-            asyncio.create_task(_run_ai_turns(req.game_id))
+            asyncio.create_task(_run_ai_turns(game_id))
 
-    return result
+    return _state_payload(mgr) if result.get("success") else result
 
 
-@router.post("/api/game/pass")
-async def pass_turn(req: PassRequest):
+@router.post("/api/game/{game_id}/end_turn")
+async def end_turn(game_id: str):
     try:
-        mgr = _get_game(req.game_id)
+        mgr = _get_game(game_id)
     except ValueError as e:
         return {"error": str(e)}
 
+    if not mgr.is_human_turn():
+        return {"success": False, "error": "Not your turn"}
+
     result = mgr.pass_turn()
-    await ws_manager.broadcast(req.game_id, "turn_change", result)
-    await ws_manager.broadcast(req.game_id, "state_update", _state_payload(mgr))
+    await ws_manager.broadcast(game_id, "turn_change", result)
+    await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
 
     if not mgr.is_human_turn() and not mgr.state.game_over:
-        asyncio.create_task(_run_ai_turns(req.game_id))
+        asyncio.create_task(_run_ai_turns(game_id))
 
-    return result
+    return _state_payload(mgr)
+
+
+@router.post("/api/game/{game_id}/chat")
+async def handle_chat(game_id: str, req: ChatRequest):
+    try:
+        mgr = _get_game(game_id)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    # Add human message to chat
+    chat_entry = mgr._add_chat("human", mgr.state.human_team.value, req.message)
+
+    # Broadcast to all
+    payload = {
+        "sender": "You",
+        "team": chat_entry["team"],
+        "message": chat_entry["message"],
+        "timestamp": datetime.fromtimestamp(chat_entry["timestamp"]).isoformat(),
+    }
+    await ws_manager.broadcast(game_id, "chat_message", payload)
+
+    return {"success": True}
 
 
 # ── WebSocket ───────────────────────────────────────────────────────────
+
 
 @router.websocket("/ws/{game_id}")
 async def websocket_endpoint(websocket: WebSocket, game_id: str):
@@ -248,11 +348,15 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str):
             if action == "status":
                 try:
                     mgr = _get_game(game_id)
-                    await websocket.send_json({
-                        "event": "state_update",
-                        "data": _state_payload(mgr),
-                    })
+                    await websocket.send_json(
+                        {
+                            "event": "state_update",
+                            "data": _state_payload(mgr),
+                        }
+                    )
                 except ValueError:
-                    await websocket.send_json({"event": "error", "data": "Game not found"})
+                    await websocket.send_json(
+                        {"event": "error", "data": "Game not found"}
+                    )
     except WebSocketDisconnect:
         ws_manager.disconnect(game_id, websocket)

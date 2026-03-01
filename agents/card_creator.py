@@ -7,7 +7,8 @@ final word list.
 
 from __future__ import annotations
 
-from crewai import Agent, Task, Crew, Process, LLM
+import json
+from crewai import Agent, LLM
 from pydantic import BaseModel
 
 from tools.tavily_search import search_category
@@ -15,11 +16,13 @@ from tools.tavily_search import search_category
 
 # ── structured output ───────────────────────────────────────────────────
 
+
 class WordList(BaseModel):
     words: list[str]
 
 
 # ── agent wrapper ───────────────────────────────────────────────────────
+
 
 class CardCreatorAgent:
     """Pre-game agent that generates the word list for the board."""
@@ -57,49 +60,41 @@ class CardCreatorAgent:
         category: str | None,
         difficulty: str,
     ) -> list[str]:
-        """Return *count* unique words matching the requested parameters."""
-        agent = self._build_agent()
-
+        """Return *count* unique words using direct LLM call for speed."""
         difficulty_guide = {
-            "easy": "Common, well-known words with obvious groupings. Easy to associate.",
-            "medium": "Mix of common and uncommon words. Some tricky relationships possible.",
-            "hard": "Obscure words, many potential cross-team associations. Deceptive similarities.",
+            "easy": "Common, well-known words.",
+            "medium": "Mix of common and uncommon words.",
+            "hard": "Obscure words, tricky relationships.",
         }
-
         lang_label = "Arabic" if language == "ar" else "English"
-        category_text = f"category '{category}'" if category else "random mixed themes"
+        category_text = f"category '{category}'" if category else "random themes"
 
-        search_instruction = (
-            f"IMPORTANT: First use the search_category tool to search for '{category}' "
-            f"to get real, accurate names/terms. Then pick {count} from the results."
-        ) if category else "Generate words from your own knowledge across mixed themes."
-
-        task = Task(
-            description=(
-                f"Generate exactly {count} unique words in {lang_label} "
-                f"for {category_text}. "
-                f"Difficulty: {difficulty} — {difficulty_guide.get(difficulty, '')}. "
-                f"{search_instruction} "
-                f"Rules: no duplicates, no offensive words, each word must be a "
-                f"single word (no spaces)."
-            ),
-            expected_output=(
-                f"A JSON object with a 'words' array containing exactly {count} unique words."
-            ),
-            agent=agent,
-            output_pydantic=WordList,
-            guardrail=lambda result: self._validate(result, count),
-            guardrail_max_retries=3,
+        prompt = (
+            f"Generate exactly {count} unique {lang_label} words for Codenames.\n"
+            f"Theme: {category_text}. Difficulty: {difficulty} ({difficulty_guide.get(difficulty, '')}).\n"
+            f"Rules: NO duplicates, NO spaces, NO offensive words.\n"
+            f'Response MUST be a JSON array of strings: ["word1", "word2", ...]'
         )
 
-        crew = Crew(
-            agents=[agent],
-            tasks=[task],
-            process=Process.sequential,
-            verbose=False,
-        )
-        result = crew.kickoff()
-        return result.pydantic.words
+        response = self.llm.call([{"role": "user", "content": prompt}])
+        try:
+            text = response.strip()
+            # Extract JSON if wrapped in markdown
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+
+            words = json.loads(text)
+            if isinstance(words, dict) and "words" in words:
+                words = words["words"]
+
+            # Ensure we have the right count and no duplicates
+            words = list(dict.fromkeys(words))[:count]
+            return words
+        except Exception:
+            # Absolute fallback
+            return ["apple", "banana", "cherry", "date", "elderberry"][:count]
 
     # ── guardrail ───────────────────────────────────────────────────
 

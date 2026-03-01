@@ -9,23 +9,6 @@
 const API_BASE = '';
 const POLL_INTERVAL = 5000;
 
-// ─── Sounds ──────────────────────────────────────────
-const sounds = {
-  // Short UI Click for card flips
-  flip: new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'),
-  // Short Success Chime for winning
-  win: new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'),
-  // Subtle error blub
-  error: new Audio('https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3')
-};
-
-function playSound(name) {
-  if (sounds[name]) {
-    sounds[name].currentTime = 0;
-    sounds[name].play().catch(e => console.log('Sound blocked:', e));
-  }
-}
-
 // ─── State ───────────────────────────────────────────
 let gameId = null;
 let gameState = null;
@@ -33,11 +16,8 @@ let ws = null;
 let wsReconnectAttempts = 0;
 let wsReconnectTimer = null;
 let pollTimer = null;
-let isPollingPaused = false;
 let guessCount = 0;
-let lastClueWord = null;
 let chatAutoScroll = true;
-let logAutoScroll = true;
 let boardRevealed = false;
 
 // ─── Setup Config ────────────────────────────────────
@@ -48,134 +28,6 @@ const config = {
   board_size: 25,
   difficulty: 'medium',
   category: '',
-};
-
-// ─── Translations ────────────────────────────────────
-const TRANSLATIONS = {
-  en: {
-    game_title: "CODENAMES",
-    game_subtitle: "Multi-Agent AI Board Game",
-    choose_team: "Choose Your Team",
-    red_team: "RED TEAM",
-    blue_team: "BLUE TEAM",
-    choose_role: "Choose Your Role",
-    role_operative: "OPERATIVE",
-    desc_operative: "Guess words",
-    role_spymaster: "SPYMASTER",
-    desc_spymaster: "Give clues",
-    language: "Language",
-    lang_en: "English",
-    lang_ar: "العربية",
-    board_size: "Board Size",
-    size_15: "15",
-    size_25: "25",
-    size_35: "35",
-    hint_fast: "Fast",
-    hint_classic: "Classic",
-    hint_large: "Large",
-    difficulty: "Difficulty",
-    diff_easy: "Easy",
-    diff_medium: "Medium",
-    diff_hard: "Hard",
-    category: "Category",
-    optional: "(optional)",
-    category_placeholder: "Leave empty for random, or type: animals, countries, sports...",
-    start_game: "START GAME",
-    creating: "CREATING...",
-    red_remaining_text: "Red: {n} remaining",
-    blue_remaining_text: "Blue: {n} remaining",
-    turn_red: "RED TEAM'S TURN",
-    turn_blue: "BLUE TEAM'S TURN",
-    waiting: "WAITING...",
-    clue_label: "CLUE:",
-    spymaster_thinking: "Spymaster is thinking...",
-    opponent_turn: "Opponent's turn...",
-    end_turn: "End Turn",
-    guesses_left: "Guesses left: {n}",
-    give_clue: "Give Clue",
-    agent_logs: "Agent Logs",
-    game_chat: "Game Chat",
-    no_activity: "No agent activity yet...",
-    no_messages: "No messages yet...",
-    type_message: "Type a message...",
-    clue_word_placeholder: "Enter your clue word",
-    wait_operative: "Waiting for your operative to guess...",
-    reveal_board: "Reveal Board",
-    play_again: "New Game",
-    board_revealed: "Board Revealed",
-    victory: "VICTORY! 🎉",
-    defeat: "DEFEAT 💔",
-    game_over: "GAME OVER",
-    new_game: "🔄 New Game",
-    quick_restart: "⚡ Quick Restart",
-    you: "You",
-    thinking: "Thinking",
-    clue: "Clue",
-    guess: "Guess",
-    reflection: "Reflection"
-  },
-  ar: {
-    game_title: "CODENAMES",
-    game_subtitle: "لعبة ذكاء اصطناعي متعددة العملاء",
-    choose_team: "اختر فريقك",
-    red_team: "الفريق الأحمر",
-    blue_team: "الفريق الأزرق",
-    choose_role: "اختر دورك",
-    role_operative: "عميل ميداني",
-    desc_operative: "خمّن الكلمات",
-    role_spymaster: "رئيس المخابرات",
-    desc_spymaster: "أعطِ تلميحات",
-    language: "اللغة",
-    lang_en: "English",
-    lang_ar: "العربية",
-    board_size: "حجم اللوحة",
-    size_15: "15",
-    size_25: "25",
-    size_35: "35",
-    hint_fast: "سريع",
-    hint_classic: "كلاسيك",
-    hint_large: "كبير",
-    difficulty: "المستوى",
-    diff_easy: "سهل",
-    diff_medium: "متوسط",
-    diff_hard: "صعب",
-    category: "الفئة",
-    optional: "(اختياري)",
-    category_placeholder: "اتركه فارغاً للعشوائية، أو اكتب: حيوانات، دول، رياضة...",
-    start_game: "ابدأ اللعبة",
-    creating: "جاري الإنشاء...",
-    red_remaining_text: "الأحمر متبقي: {n}",
-    blue_remaining_text: "الأزرق متبقي: {n}",
-    turn_red: "دور الفريق الأحمر",
-    turn_blue: "دور الفريق الأزرق",
-    waiting: "انتظار...",
-    clue_label: "التلميح:",
-    spymaster_thinking: "رئيس المخابرات يفكر...",
-    opponent_turn: "دور الخصم...",
-    end_turn: "إنهاء الدور",
-    guesses_left: "التخمينات المتبقية: {n}",
-    give_clue: "إرسال التلميح",
-    agent_logs: "سجل العملاء",
-    game_chat: "دردشة اللعبة",
-    no_activity: "لا يوجد نشاط بعد...",
-    no_messages: "لا توجد رسائل بعد...",
-    type_message: "اكتب رسالة...",
-    clue_word_placeholder: "أدخل كلمة التلميح",
-    wait_operative: "بانتظار عميلك الميداني للتخمين...",
-    reveal_board: "كشف الأوراق",
-    play_again: "لعبة جديدة",
-    board_revealed: "الأوراق مكشوفة",
-    victory: "مبروك! فوز مستحق! 🎉",
-    defeat: "للأسف! خسارة! 💔",
-    game_over: "انتهت اللعبة",
-    new_game: "🔄 لعبة جديدة",
-    quick_restart: "⚡ إعادة سريعة",
-    you: "أنت",
-    thinking: "يفكر",
-    clue: "تلميح",
-    guess: "تخمين",
-    reflection: "تأمل"
-  }
 };
 
 // ─── DOM References (cached on DOMContentLoaded) ─────
@@ -190,53 +42,15 @@ let $logsPanel, $logsList;
 let $chatPanel, $chatMessages, $chatInput, $chatSendBtn;
 let $gameOverOverlay, $gameOverIcon, $gameOverTitle, $gameOverSubtitle;
 let $goRed, $goBlue, $revealBoardBtn, $playAgainBtn, $confettiContainer;
-let $postGameActions, $headerNewGameBtn, $headerQuickRestartBtn;
 let $toastContainer;
 
-// ─── Localization Logic ──────────────────────────────
-
-function localizeUI(lang) {
-  const dict = TRANSLATIONS[lang] || TRANSLATIONS.en;
-
-  // Update elements with data-i18n
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.dataset.i18n;
-    if (dict[key]) {
-      el.textContent = dict[key];
-    }
-  });
-
-  // Update placeholders
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-    const key = el.dataset.i18nPlaceholder;
-    if (dict[key]) {
-      el.placeholder = dict[key];
-    }
-  });
-
-  // RTL support - Using class to avoid flipping entire flexbox layout
-  if (lang === 'ar') {
-    document.body.classList.add('lang-ar');
-    document.body.removeAttribute('dir');
-  } else {
-    document.body.classList.remove('lang-ar');
-    document.body.removeAttribute('dir');
-  }
-}
-
 // ─── Initialize ──────────────────────────────────────
-function init() {
+document.addEventListener('DOMContentLoaded', () => {
   cacheDOM();
   bindSetupEvents();
   bindGameEvents();
   showSetupScreen();
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+});
 
 function cacheDOM() {
   $setupScreen = document.getElementById('setup-screen');
@@ -289,10 +103,6 @@ function cacheDOM() {
   $revealBoardBtn = document.getElementById('reveal-board-btn');
   $playAgainBtn = document.getElementById('play-again-btn');
   $confettiContainer = document.getElementById('confetti-container');
-
-  $postGameActions = document.getElementById('post-game-actions');
-  $headerNewGameBtn = document.getElementById('header-new-game-btn');
-  $headerQuickRestartBtn = document.getElementById('header-quick-restart-btn');
 
   $toastContainer = document.getElementById('toast-container');
 }
@@ -347,9 +157,6 @@ function bindSetupEvents() {
       btn.classList.add('selected');
       btn.setAttribute('aria-pressed', 'true');
       config.language = btn.dataset.lang;
-
-      // Immediate localization
-      localizeUI(config.language);
     });
   });
 
@@ -391,8 +198,7 @@ function bindSetupEvents() {
 
 async function createNewGame(cfg) {
   $startBtn.disabled = true;
-  const dict = TRANSLATIONS[cfg.language] || TRANSLATIONS.en;
-  $startLabel.textContent = dict.creating || 'CREATING...';
+  $startLabel.textContent = 'CREATING...';
   $startSpinner.classList.remove('hidden');
 
   try {
@@ -409,21 +215,18 @@ async function createNewGame(cfg) {
       }),
     });
 
-    if (!res.ok) {
-      let errTxt = await res.text();
-      try {
-        const errJson = JSON.parse(errTxt);
-        errTxt = errJson.detail || errJson.error || errTxt;
-      } catch (e) { } // Ignore
-      throw new Error(errTxt);
-    }
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
     const data = await res.json();
     gameId = data.game_id;
     gameState = data;
     guessCount = 0;
 
-    // Localization
-    localizeUI(cfg.language);
+    // RTL support
+    if (cfg.language === 'ar') {
+      document.body.setAttribute('dir', 'rtl');
+    } else {
+      document.body.removeAttribute('dir');
+    }
 
     showGameScreen();
     connectWebSocket(gameId);
@@ -433,8 +236,7 @@ async function createNewGame(cfg) {
     showToast('Failed to create game: ' + err.message, 'error');
   } finally {
     $startBtn.disabled = false;
-    const dict = TRANSLATIONS[cfg.language] || TRANSLATIONS.en;
-    $startLabel.textContent = dict.start_game || 'START GAME';
+    $startLabel.textContent = 'START GAME';
     $startSpinner.classList.add('hidden');
   }
 }
@@ -445,7 +247,6 @@ function showGameScreen() {
   $setupScreen.classList.remove('active');
   $gameScreen.classList.add('active');
   $gameOverOverlay.classList.add('hidden');
-  $postGameActions.classList.add('hidden');
   $boardLoading.classList.remove('hidden');
   $cardGrid.innerHTML = '';
 }
@@ -511,13 +312,11 @@ function bindGameEvents() {
     showSetupScreen();
   });
   $revealBoardBtn.addEventListener('click', () => {
-    $gameOverOverlay.classList.add('hidden');
-    $postGameActions.classList.remove('hidden');
     boardRevealed = true;
-    renderBoard(gameState);
+    if (gameState) renderBoard(gameState);
+    $revealBoardBtn.disabled = true;
+    $revealBoardBtn.textContent = 'Board Revealed';
   });
-  $headerNewGameBtn.addEventListener('click', showSetupScreen);
-  $headerQuickRestartBtn.addEventListener('click', handleQuickRestart);
 }
 
 function togglePanel(panelId) {
@@ -547,9 +346,6 @@ function renderFullState(state) {
   renderChat(state.chat_messages || []);
   renderLogs(state.agent_logs || []);
 
-  if (chatAutoScroll) scrollChatIfNeeded();
-  if (logAutoScroll) scrollLogsIfNeeded();
-
   if (state.status !== 'playing') {
     showGameOver(state);
   }
@@ -561,9 +357,8 @@ function updateScores(state) {
   const oldRed = $redRemaining.textContent;
   const oldBlue = $blueRemaining.textContent;
 
-  const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-  $redRemaining.textContent = dict.red_remaining_text ? dict.red_remaining_text.replace('{n}', state.red_remaining) : state.red_remaining;
-  $blueRemaining.textContent = dict.blue_remaining_text ? dict.blue_remaining_text.replace('{n}', state.blue_remaining) : state.blue_remaining;
+  $redRemaining.textContent = state.red_remaining;
+  $blueRemaining.textContent = state.blue_remaining;
 
   if (oldRed !== '' + state.red_remaining) {
     $redRemaining.classList.remove('score-bounce');
@@ -581,12 +376,11 @@ function updateScores(state) {
 
 function updateTurnIndicator(state) {
   $turnIndicator.className = 'turn-indicator';
-  const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
   if (state.current_turn === 'red') {
-    $turnIndicator.textContent = dict.turn_red || "RED TEAM'S TURN";
+    $turnIndicator.textContent = "RED TEAM'S TURN";
     $turnIndicator.classList.add('red-turn');
   } else {
-    $turnIndicator.textContent = dict.turn_blue || "BLUE TEAM'S TURN";
+    $turnIndicator.textContent = "BLUE TEAM'S TURN";
     $turnIndicator.classList.add('blue-turn');
   }
 }
@@ -602,25 +396,23 @@ function updateClue(state) {
   $clueBanner.classList.add('hidden');
   $clueStatus.classList.add('hidden');
 
-  const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-
   if (clue && clue.word) {
     $clueBanner.classList.remove('hidden');
     $clueWord.textContent = clue.word;
     $clueNumber.textContent = clue.number;
   } else if (isMyTurn && isOperative) {
     $clueStatus.classList.remove('hidden');
-    const waitingMsg = dict.spymaster_thinking || 'Spymaster is thinking...';
-    $clueStatus.innerHTML = `<span class="wait-spinner" style="display:inline-block;width:16px;height:16px;vertical-align:middle;margin-right:8px;"></span> ${waitingMsg}`;
+    $clueStatus.innerHTML = '<span class="wait-spinner" style="display:inline-block;width:16px;height:16px;vertical-align:middle;margin-right:8px;"></span> Spymaster is thinking...';
   } else if (!isMyTurn) {
     $clueStatus.classList.remove('hidden');
-    $clueStatus.textContent = dict.opponent_turn || "\u23F3 Opponent's turn...";
+    $clueStatus.textContent = "\u23F3 Opponent's turn...";
   }
 }
 
 // ─── Board Rendering ─────────────────────────────────
 
 function renderBoard(state) {
+  $cardGrid.innerHTML = '';
   const board = state.board || [];
   const cols = board.length <= 15 ? 5 : (board.length <= 25 ? 5 : 7);
 
@@ -632,69 +424,55 @@ function renderBoard(state) {
   const hasClue = state.clue && state.clue.word;
   const canGuess = config.role === 'operative' && isMyTurn && hasClue && state.status === 'playing';
 
-  // If grid is empty or size changed, rebuild
-  if ($cardGrid.children.length !== board.length) {
-    $cardGrid.innerHTML = '';
-    board.forEach((card, index) => {
-      const el = document.createElement('div');
-      el.className = 'board-card';
-      el.dataset.index = index;
-      const inner = document.createElement('div');
-      inner.className = 'card-inner';
-      const wordEl = document.createElement('span');
-      wordEl.className = 'card-word';
-      inner.appendChild(wordEl);
-      el.appendChild(inner);
-      $cardGrid.appendChild(el);
-    });
-  }
-
-  // Update existing elements (Anti-flicker)
-  const cardEls = $cardGrid.querySelectorAll('.board-card');
   board.forEach((card, index) => {
-    const el = cardEls[index];
-    const inner = el.querySelector('.card-inner');
-    const wordEl = el.querySelector('.card-word');
+    const el = document.createElement('div');
+    el.className = 'board-card';
+    el.setAttribute('role', 'gridcell');
 
-    // Only update text if needed
-    if (wordEl.textContent !== card.word) wordEl.textContent = card.word;
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
 
-    // Build classes
-    let classes = ['card-inner'];
+    const wordEl = document.createElement('span');
+    wordEl.className = 'card-word';
+    wordEl.textContent = card.word;
+
     if (card.revealed || boardRevealed) {
-      classes.push('revealed', `type-${card.type}`);
-      // Remove spinner if revealed
-      const spinner = el.querySelector('.guess-spinner');
-      if (spinner) spinner.remove();
-    } else {
-      classes.push('unrevealed');
-      if (isSpymaster) {
-        classes.push(`spy-${card.type}`, 'spymaster-view');
-      }
-      if (canGuess && !isSpymaster) {
-        classes.push('clickable');
-        // Add listener only once
-        if (!el._hasListener) {
-          el.addEventListener('click', () => handleCardClick(card.word, el));
-          el._hasListener = true;
-        }
-      } else {
-        classes.push('disabled');
-      }
-    }
-
-    const newClassName = classes.join(' ');
-    if (inner.className !== newClassName) inner.className = newClassName;
-
-    // Special icons
-    if ((card.revealed || boardRevealed || isSpymaster) && card.type === 'assassin') {
-      if (!inner.querySelector('.card-skull')) {
+      inner.classList.add('revealed', `type-${card.type}`);
+      if (card.type === 'assassin') {
         const skull = document.createElement('span');
         skull.className = 'card-skull';
         skull.textContent = '\u2620\uFE0F';
         inner.appendChild(skull);
       }
+    } else {
+      inner.classList.add('unrevealed');
+
+      // Spymaster sees all card types
+      if (isSpymaster) {
+        inner.classList.add(`spy-${card.type}`);
+        if (card.type === 'assassin') {
+          const skull = document.createElement('span');
+          skull.className = 'card-skull';
+          skull.textContent = '\u2620\uFE0F';
+          inner.appendChild(skull);
+        }
+      }
+
+      // Operative can click
+      if (canGuess && !isSpymaster) {
+        inner.classList.add('clickable');
+        el.addEventListener('click', () => handleCardClick(card.word, el));
+      } else if (!isSpymaster) {
+        inner.classList.add('disabled');
+      } else {
+        // Spymaster can never click
+        inner.classList.add('disabled');
+      }
     }
+
+    inner.appendChild(wordEl);
+    el.appendChild(inner);
+    $cardGrid.appendChild(el);
   });
 }
 
@@ -733,8 +511,7 @@ function renderControls(state) {
       const clueNum = state.clue.number || 0;
       const maxGuesses = clueNum + 1;
       const left = maxGuesses - guessCount;
-      const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-      $guessesLeft.textContent = dict.guesses_left ? dict.guesses_left.replace('{n}', left > 0 ? left : 0) : `Guesses left: ${left > 0 ? left : 0}`;
+      $guessesLeft.textContent = `Guesses left: ${left > 0 ? left : 0}`;
       $endTurnBtn.disabled = guessCount === 0;
     }
   }
@@ -743,54 +520,6 @@ function renderControls(state) {
 function getTeamRemaining() {
   if (!gameState) return 9;
   return config.team === 'red' ? gameState.red_remaining : gameState.blue_remaining;
-}
-
-async function handleQuickRestart() {
-  if (!config.team) return;
-
-  $headerQuickRestartBtn.disabled = true;
-  const originalText = $headerQuickRestartBtn.textContent;
-  $headerQuickRestartBtn.textContent = (config.language === 'ar' ? 'جاري البدء...' : 'Restarting...');
-
-  try {
-    const res = await fetch(`${API_BASE}/api/game/new`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        board_size: config.board_size,
-        language: config.language,
-        difficulty: config.difficulty,
-        category: config.category,
-        team: config.team,
-        role: config.role
-      })
-    });
-
-    if (!res.ok) throw new Error('Server error');
-    const data = await res.json();
-    gameId = data.game_id;
-    gameState = data;
-
-    // Reset state
-    boardRevealed = false;
-    isPollingPaused = false;
-    guessCount = 0;
-    lastClueWord = null;
-
-    $postGameActions.classList.add('hidden');
-    $gameOverOverlay.classList.add('hidden');
-
-    showGameScreen();
-    connectWebSocket(gameId);
-    startPolling();
-    renderFullState(data);
-    showToast((config.language === 'ar' ? 'بدأت لعبة جديدة!' : 'New game started!'), 'info');
-  } catch (err) {
-    showToast('Failed to restart: ' + err.message, 'error');
-  } finally {
-    $headerQuickRestartBtn.disabled = false;
-    $headerQuickRestartBtn.textContent = originalText;
-  }
 }
 
 // ─── Card Click (Operative) ──────────────────────────
@@ -816,7 +545,6 @@ async function handleCardClick(word, cardEl) {
     const data = await res.json();
     gameState = data;
     guessCount++;
-    playSound('flip');
 
     // Find the guessed card to see its type
     const guessedCard = data.board.find(c => c.word === word);
@@ -857,7 +585,7 @@ async function handleGiveClue(word, number) {
     const res = await fetch(`${API_BASE}/api/game/${gameId}/clue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clue: word, number }),
+      body: JSON.stringify({ word, number }),
     });
     if (!res.ok) throw new Error(`Server error: ${res.status}`);
     const data = await res.json();
@@ -889,8 +617,7 @@ async function handleEndTurn() {
     guessCount = 0;
     renderFullState(data);
   } catch (err) {
-    const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-    showToast((dict.error_end_turn || 'Failed to end turn') + ': ' + err.message, 'error');
+    showToast('Failed to end turn: ' + err.message, 'error');
     $endTurnBtn.disabled = false;
   }
 }
@@ -899,8 +626,7 @@ async function handleEndTurn() {
 
 function renderChat(messages) {
   if (!messages || messages.length === 0) {
-    const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-    $chatMessages.innerHTML = `<div class="empty-state">${dict.no_messages || 'No messages yet...'}</div>`;
+    $chatMessages.innerHTML = '<div class="empty-state">No messages yet...</div>';
     return;
   }
 
@@ -917,15 +643,12 @@ function appendChatBubble(msg) {
   const div = document.createElement('div');
   const isRed = msg.team === 'red';
   const isHuman = msg.sender === 'You' || msg.sender === 'Human';
-  const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
 
   div.className = `chat-msg ${isRed ? 'red-msg' : 'blue-msg'} ${isHuman ? 'human-msg' : ''}`;
 
   const sender = document.createElement('span');
   sender.className = 'chat-sender';
-  let senderName = msg.sender || 'Agent';
-  if (isHuman && dict.you) senderName = dict.you;
-  sender.textContent = senderName;
+  sender.textContent = msg.sender || 'Agent';
 
   const bubble = document.createElement('div');
   bubble.className = 'chat-bubble';
@@ -947,14 +670,8 @@ function addChatMessage(msg) {
 }
 
 function scrollChatIfNeeded() {
-  if (chatAutoScroll && $chatMessages) {
+  if (chatAutoScroll) {
     $chatMessages.scrollTop = $chatMessages.scrollHeight;
-  }
-}
-
-function scrollLogsIfNeeded() {
-  if (logAutoScroll && $logsList) {
-    $logsList.scrollTop = $logsList.scrollHeight;
   }
 }
 
@@ -976,8 +693,7 @@ async function sendChatMessage(text) {
       body: JSON.stringify({ message: text }),
     });
   } catch (err) {
-    const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-    showToast(dict.error_send || 'Failed to send message', 'error');
+    showToast('Failed to send message', 'error');
   }
 }
 
@@ -985,8 +701,7 @@ async function sendChatMessage(text) {
 
 function renderLogs(logs) {
   if (!logs || logs.length === 0) {
-    const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-    $logsList.innerHTML = `<div class="empty-state">${dict.no_activity || 'No agent activity yet...'}</div>`;
+    $logsList.innerHTML = '<div class="empty-state">No agent activity yet...</div>';
     return;
   }
 
@@ -1012,15 +727,8 @@ function appendLogEntry(log) {
 
   // Badge
   const action = (log.action || 'info').toLowerCase();
-  const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
   let badgeClass = '';
-  let badgeKey = action.includes('think') ? 'thinking' :
-    (action.includes('clue') ? 'clue' :
-      (action.includes('guess') ? 'guess' :
-        (action.includes('reflect') ? 'reflection' : '')));
-
-  let badgeText = dict[badgeKey] ? dict[badgeKey].toUpperCase() : action.replace(/_/g, ' ').toUpperCase();
-
+  let badgeText = action.replace(/_/g, ' ').toUpperCase();
   if (action.includes('think') || action.includes('generat')) badgeClass = 'thinking';
   else if (action.includes('clue')) badgeClass = 'clue';
   else if (action.includes('guess')) badgeClass = 'guess';
@@ -1060,7 +768,6 @@ function appendLogEntry(log) {
 
 function addLogEntry(log) {
   appendLogEntry(log);
-  if (logAutoScroll) scrollLogsIfNeeded();
 }
 
 // ─── WebSocket ───────────────────────────────────────
@@ -1102,7 +809,7 @@ function connectWebSocket(id) {
 }
 
 function handleWebSocketMessage(msg) {
-  switch (msg.type || msg.event) {
+  switch (msg.type) {
     case 'state_update':
       gameState = msg.data;
       // Reset guess count on turn change
@@ -1149,17 +856,6 @@ function startPolling() {
       const res = await fetch(`${API_BASE}/api/game/${gameId}/state`);
       if (!res.ok) return;
       const data = await res.json();
-
-      // Stop polling if it's human turn to act to avoid UI jumps/interference
-      const isSpymaster = config.role === 'spymaster';
-      const isMyTurn = data.current_turn === config.team;
-      const isHumanTurn = (isMyTurn && (
-        (isSpymaster && data.current_phase === 'clue') ||
-        (!isSpymaster && data.current_phase === 'guess')
-      ));
-
-      if (isHumanTurn) return;
-
       gameState = data;
       renderFullState(data);
     } catch (err) {
@@ -1171,81 +867,44 @@ function startPolling() {
 // ─── Game Over ───────────────────────────────────────
 
 function showGameOver(state) {
-  // If user already clicked "Reveal Board", don't show the overlay again
-  if (boardRevealed) return;
-
   $gameOverOverlay.classList.remove('hidden');
+  boardRevealed = false;
   $revealBoardBtn.disabled = false;
-
-  const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-  $revealBoardBtn.textContent = dict.reveal_board || 'Reveal Board';
-  $playAgainBtn.textContent = dict.play_again || 'New Game';
+  $revealBoardBtn.textContent = 'Reveal Board';
 
   $goRed.textContent = state.red_remaining;
   $goBlue.textContent = state.blue_remaining;
 
-  const humanTeam = config.team;
-  const winner = state.winner;
+  const status = (state.status || '').toLowerCase();
 
-  // Determine if human won
-  const didHumanWin = winner === humanTeam;
-
-  // Check if assassin was hit (look at the board for revealed assassin)
-  const assassinHit = state.board && state.board.some(c => c.type === 'assassin' && c.revealed);
-
-  if (assassinHit) {
-    // Assassin ending
+  if (status.includes('assassin') || status.includes('lost')) {
+    // Assassin hit
+    const loser = status.includes('red') ? 'Red' : (status.includes('blue') ? 'Blue' : 'A team');
     $gameOverIcon.textContent = '\uD83D\uDC80';
+    $gameOverTitle.textContent = 'GAME OVER';
     $gameOverTitle.className = 'game-over-title assassin-end';
-
-    if (didHumanWin) {
-      // Opponent hit the assassin — human wins
-      if (config.language === 'ar') {
-        $gameOverTitle.textContent = 'مبروك! فوز مستحق! 🎉';
-        $gameOverSubtitle.textContent = 'الخصم أصاب بطاقة الاغتيال! أنت الفائز!';
-      } else {
-        $gameOverTitle.textContent = 'VICTORY! 🎉';
-        $gameOverSubtitle.textContent = 'The opponent hit the Assassin! You win!';
-      }
-      playSound('win');
-      showConfetti();
-    } else {
-      // Human's team hit the assassin — human loses
-      if (config.language === 'ar') {
-        $gameOverTitle.textContent = 'انتهت اللعبة 💀';
-        $gameOverSubtitle.textContent = 'فريقك أصاب بطاقة الاغتيال! خسارة!';
-      } else {
-        $gameOverTitle.textContent = 'GAME OVER 💀';
-        $gameOverSubtitle.textContent = 'Your team hit the Assassin! You lose!';
-      }
-      document.body.classList.add('assassin-flash');
-      setTimeout(() => document.body.classList.remove('assassin-flash'), 600);
-    }
+    $gameOverSubtitle.textContent = `${loser} hit the Assassin!`;
+    document.body.classList.add('assassin-flash');
+    setTimeout(() => document.body.classList.remove('assassin-flash'), 600);
+  } else if (status.includes('red_win') || status.includes('red win')) {
+    $gameOverIcon.textContent = '\uD83C\uDF89';
+    $gameOverTitle.textContent = 'RED WINS!';
+    $gameOverTitle.className = 'game-over-title red-win';
+    $gameOverSubtitle.textContent = 'Red team found all their agents!';
+    showConfetti();
+  } else if (status.includes('blue_win') || status.includes('blue win')) {
+    $gameOverIcon.textContent = '\uD83C\uDF89';
+    $gameOverTitle.textContent = 'BLUE WINS!';
+    $gameOverTitle.className = 'game-over-title blue-win';
+    $gameOverSubtitle.textContent = 'Blue team found all their agents!';
+    showConfetti();
   } else {
-    // Normal win/loss (all cards revealed)
-    if (didHumanWin) {
-      $gameOverIcon.textContent = '\uD83C\uDF89';
-      $gameOverTitle.className = 'game-over-title human-win pulse';
-      if (config.language === 'ar') {
-        $gameOverTitle.textContent = 'مبروك! فوز مستحق! 🎉';
-        $gameOverSubtitle.textContent = 'فريقك كشف جميع العملاء بنجاح!';
-      } else {
-        $gameOverTitle.textContent = 'VICTORY! 🎉';
-        $gameOverSubtitle.textContent = 'Your team found all their agents!';
-      }
-      playSound('win');
-      showConfetti();
-    } else {
-      $gameOverIcon.textContent = '\uD83D\uDE1E';
-      $gameOverTitle.className = 'game-over-title human-loss';
-      if (config.language === 'ar') {
-        $gameOverTitle.textContent = 'للأسف! خسارة! 💔';
-        $gameOverSubtitle.textContent = 'الخصم كشف جميع عملائه أولاً!';
-      } else {
-        $gameOverTitle.textContent = 'DEFEAT 💔';
-        $gameOverSubtitle.textContent = 'The opponent found all their agents first.';
-      }
-    }
+    // Generic win
+    $gameOverIcon.textContent = '\uD83C\uDF89';
+    $gameOverTitle.textContent = 'GAME OVER';
+    $gameOverTitle.className = 'game-over-title';
+    $gameOverSubtitle.textContent = state.status;
+    showConfetti();
   }
 }
 
