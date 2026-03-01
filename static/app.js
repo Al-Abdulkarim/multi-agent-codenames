@@ -1142,30 +1142,7 @@ function reconnectWebSocket(id) {
 // ─── Polling Fallback ────────────────────────────────
 
 function startPolling() {
-  clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    if (!gameId) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/game/${gameId}/state`);
-      if (!res.ok) return;
-      const data = await res.json();
-
-      // Stop polling if it's human turn to act to avoid UI jumps/interference
-      const isSpymaster = config.role === 'spymaster';
-      const isMyTurn = data.current_turn === config.team;
-      const isHumanTurn = (isMyTurn && (
-        (isSpymaster && data.current_phase === 'clue') ||
-        (!isSpymaster && data.current_phase === 'guess')
-      ));
-
-      if (isHumanTurn) return;
-
-      gameState = data;
-      renderFullState(data);
-    } catch (err) {
-      // Silent fail — WebSocket is primary
-    }
-  }, POLL_INTERVAL);
+  // Polling disabled to prevent UI refresh flicker/AI thinking spam
 }
 
 // ─── Game Over ───────────────────────────────────────
