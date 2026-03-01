@@ -847,7 +847,7 @@ function reconnectWebSocket(id) {
 }
 
 // ─── Polling Fallback ────────────────────────────────
-
+"""
 function startPolling() {
   clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
@@ -863,7 +863,7 @@ function startPolling() {
     }
   }, POLL_INTERVAL);
 }
-
+"""
 // ─── Game Over ───────────────────────────────────────
 
 function showGameOver(state) {
