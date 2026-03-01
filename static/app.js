@@ -80,6 +80,7 @@ let ws = null;
 let pollTimer = null;
 let chatIdx = 0;  // track which chat messages we've rendered
 let logIdx = 0;   // track which log entries we've rendered
+const setupDirty = new Set(); // track manually changed setup fields
 
 // ── DOM refs ────────────────────────────────────────────────
 
@@ -116,6 +117,7 @@ $$(".btn-lang").forEach((btn) =>
     $$(".btn-lang").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     lang = btn.dataset.lang;
+    setupDirty.add("language");
     applyLang();
   })
 );
@@ -125,8 +127,13 @@ $$(".radio-card input").forEach((inp) =>
     const group = inp.closest(".radio-group");
     group.querySelectorAll(".radio-card").forEach((c) => c.classList.remove("selected"));
     inp.closest(".radio-card").classList.add("selected");
+    setupDirty.add(inp.name);
   })
 );
+
+$("#board-size")?.addEventListener("change", () => setupDirty.add("board_size"));
+$("#difficulty")?.addEventListener("change", () => setupDirty.add("difficulty"));
+$("#category")?.addEventListener("input", () => setupDirty.add("category"));
 
 // Allow starting without API key (server will use env var)
 $btnStart.addEventListener("click", startGame);
@@ -201,6 +208,61 @@ async function startGame() {
     $btnStartText.classList.remove("hidden");
     $btnStartLoading.classList.add("hidden");
     $btnStart.disabled = false;
+  }
+}
+
+// ── setup defaults from backend ─────────────────────────────
+
+function setRadioValue(name, value) {
+  const input = document.querySelector(`input[name="${name}"][value="${value}"]`);
+  if (!input) return;
+  input.checked = true;
+  const group = input.closest(".radio-group");
+  if (group) {
+    group.querySelectorAll(".radio-card").forEach((c) => c.classList.remove("selected"));
+    input.closest(".radio-card")?.classList.add("selected");
+  }
+}
+
+async function loadSetupDefaults() {
+  try {
+    const res = await fetch("/api/config/defaults");
+    const data = await res.json();
+    if (data.error) return;
+
+    const gameDefaults = data.game_defaults || {};
+    const playerDefaults = data.player_defaults || {};
+
+    if (!setupDirty.has("board_size") && gameDefaults.board_size != null) {
+      const boardSize = String(gameDefaults.board_size);
+      if ($("#board-size")?.querySelector(`option[value="${boardSize}"]`)) {
+        $("#board-size").value = boardSize;
+      }
+    }
+    if (!setupDirty.has("difficulty") && gameDefaults.difficulty) {
+      if ($("#difficulty")?.querySelector(`option[value="${gameDefaults.difficulty}"]`)) {
+        $("#difficulty").value = gameDefaults.difficulty;
+      }
+    }
+    if (!setupDirty.has("category")) {
+      $("#category").value = gameDefaults.category || "";
+    }
+    if (!setupDirty.has("team") && playerDefaults.human_team) {
+      setRadioValue("team", playerDefaults.human_team);
+    }
+    if (!setupDirty.has("role") && playerDefaults.human_role) {
+      setRadioValue("role", playerDefaults.human_role);
+    }
+    if (!setupDirty.has("language") && gameDefaults.language) {
+      lang = gameDefaults.language;
+      $$(".btn-lang").forEach((b) => b.classList.remove("active"));
+      const activeLangBtn = document.querySelector(`.btn-lang[data-lang="${lang}"]`);
+      activeLangBtn?.classList.add("active");
+    }
+
+    applyLang();
+  } catch {
+    // Keep static defaults if config endpoint is unavailable.
   }
 }
 
@@ -482,3 +544,4 @@ async function passTurn() {
 // ── init ────────────────────────────────────────────────────
 
 applyLang();
+loadSetupDefaults();

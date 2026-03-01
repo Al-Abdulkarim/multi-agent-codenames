@@ -13,6 +13,7 @@ import os
 import sys
 
 from dotenv import load_dotenv
+from config.game_config import CLI_DEFAULTS, SERVER_DEFAULTS, EVAL_DEFAULTS
 
 load_dotenv()
 
@@ -24,7 +25,7 @@ def run_server(args):
 
     app = create_app()
     print(f"\n🕵️  Codenames server starting on http://localhost:{args.port}")
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    uvicorn.run(app, host=SERVER_DEFAULTS.host, port=args.port)
 
 
 def run_cli(args):
@@ -81,15 +82,15 @@ def main():
         default="server",
         help="Run mode (default: server)",
     )
-    parser.add_argument("--port", type=int, default=8000, help="Server port")
+    parser.add_argument("--port", type=int, default=SERVER_DEFAULTS.port, help="Server port")
     parser.add_argument("--api-key", type=str, default=None, help="Google API key")
-    parser.add_argument("--lang", choices=["en", "ar"], default="en")
-    parser.add_argument("--size", choices=["15", "25", "35"], default="25")
-    parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
-    parser.add_argument("--team", choices=["red", "blue"], default="red")
-    parser.add_argument("--role", choices=["spymaster", "operative"], default="operative")
-    parser.add_argument("--category", type=str, default=None)
-    parser.add_argument("--games", type=int, default=5, help="Number of eval games")
+    parser.add_argument("--lang", choices=["en", "ar"], default=CLI_DEFAULTS.lang)
+    parser.add_argument("--size", choices=["15", "25", "35"], default=str(CLI_DEFAULTS.size))
+    parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default=CLI_DEFAULTS.difficulty)
+    parser.add_argument("--team", choices=["red", "blue"], default=CLI_DEFAULTS.team)
+    parser.add_argument("--role", choices=["spymaster", "operative"], default=CLI_DEFAULTS.role)
+    parser.add_argument("--category", type=str, default=CLI_DEFAULTS.category)
+    parser.add_argument("--games", type=int, default=EVAL_DEFAULTS.games, help="Number of eval games")
 
     args = parser.parse_args()
 

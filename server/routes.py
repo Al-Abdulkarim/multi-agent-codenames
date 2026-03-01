@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from config.game_config import GAME_DEFAULTS, PLAYER_DEFAULTS
 from models.enums import BoardSize, Difficulty, Language, TeamColor, PlayerRole
 from models.card import BoardConfig
 from game.game_manager import GameManager
@@ -26,12 +27,12 @@ _games: dict[str, GameManager] = {}
 # ── request bodies ──────────────────────────────────────────────────────
 
 class NewGameRequest(BaseModel):
-    board_size: int = 25
-    difficulty: str = "medium"
-    language: str = "en"
-    category: str | None = None
-    human_team: str = "blue"
-    human_role: str = "operative"
+    board_size: int = GAME_DEFAULTS.board_size
+    difficulty: str = GAME_DEFAULTS.difficulty
+    language: str = GAME_DEFAULTS.language
+    category: str | None = GAME_DEFAULTS.category
+    human_team: str = PLAYER_DEFAULTS.human_team
+    human_role: str = PLAYER_DEFAULTS.human_role
     api_key: str | None = None
 
 
@@ -141,6 +142,23 @@ async def new_game(req: NewGameRequest):
         asyncio.create_task(_run_ai_turns(state.game_id))
 
     return _state_payload(mgr)
+
+
+@router.get("/api/config/defaults")
+async def get_config_defaults():
+    """Return startup defaults for the setup UI."""
+    return {
+        "game_defaults": {
+            "board_size": GAME_DEFAULTS.board_size,
+            "difficulty": GAME_DEFAULTS.difficulty,
+            "language": GAME_DEFAULTS.language,
+            "category": GAME_DEFAULTS.category,
+        },
+        "player_defaults": {
+            "human_team": PLAYER_DEFAULTS.human_team,
+            "human_role": PLAYER_DEFAULTS.human_role,
+        },
+    }
 
 
 @router.get("/api/game/{game_id}/state")
