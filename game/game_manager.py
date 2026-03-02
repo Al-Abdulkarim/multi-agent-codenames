@@ -42,6 +42,11 @@ class GameManager:
         # Chat commentary agent
         self.chat_agent = ChatAgent(api_key=api_key)
 
+        # Callbacks for instant streaming
+        self.on_log_callback = None
+        self.on_chat_callback = None
+        self.on_state_callback = None
+
         # Agent logs — list of {timestamp, agent, action, detail, reflection}
         self.chat_messages: list[dict] = []
         # Chat messages — list of {timestamp, agent, team, message}
@@ -60,6 +65,8 @@ class GameManager:
             "reflection": reflection,
         }
         self.agent_logs.append(entry)
+        if self.on_log_callback:
+            self.on_log_callback(entry)
         return entry
 
     def _add_chat(self, agent: str, team: str, message: str) -> dict:
@@ -70,6 +77,8 @@ class GameManager:
             "message": message,
         }
         self.chat_messages.append(entry)
+        if self.on_chat_callback:
+            self.on_chat_callback(entry)
         return entry
 
     def _generate_chat(
@@ -264,6 +273,10 @@ class GameManager:
             "ai_operative",
             s.current_team.value,
         )
+
+        if self.on_state_callback:
+            self.on_state_callback()
+
         return {"success": True, "clue": clue, "number": number}
 
     def submit_human_guess(self, word: str) -> dict[str, Any]:
@@ -328,6 +341,9 @@ class GameManager:
             "ai_spymaster" if s.human_role == PlayerRole.OPERATIVE else "ai_operative",
             s.human_team.value,
         )
+
+        if self.on_state_callback:
+            self.on_state_callback()
 
         return {
             "success": True,
@@ -577,6 +593,8 @@ class GameManager:
     def pass_turn(self) -> dict[str, str]:
         """End the current team's turn early."""
         self._switch_turn()
+        if self.on_state_callback:
+            self.on_state_callback()
         return {"success": True, "current_team": self.state.current_team.value}
 
     def _switch_turn(self) -> None:

@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 
 from server.routes import router
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+STATIC_DIR = Path(__file__).resolve().parent.parent / "UI"
 
 
 def create_app() -> FastAPI:
@@ -30,6 +30,7 @@ def create_app() -> FastAPI:
     @app.get("/favicon.ico")
     async def favicon():
         from fastapi.responses import Response
+
         return Response(status_code=204)
 
     return app

@@ -63,9 +63,8 @@ def _get_game(game_id: str) -> GameManager:
 def _state_payload(mgr: GameManager) -> dict[str, Any]:
     """Build a JSON-serialisable snapshot of the game state."""
     s = mgr.state
-    is_spymaster = (
-        s.current_team == s.human_team and s.human_role == PlayerRole.SPYMASTER
-    )
+    is_spymaster = s.human_role == PlayerRole.SPYMASTER
+    show_full_board = is_spymaster or s.game_over
 
     # New UI expects 'clue' at top level
     current_clue = None
@@ -85,7 +84,9 @@ def _state_payload(mgr: GameManager) -> dict[str, Any]:
                 "revealed": c["revealed"],
                 "type": c["card_type"],  # UI expects 'type' instead of 'card_type'
             }
-            for c in (s.get_spymaster_board() if is_spymaster else s.get_public_board())
+            for c in (
+                s.get_spymaster_board() if show_full_board else s.get_public_board()
+            )
         ],
         "current_turn": s.current_team.value,  # UI expects 'current_turn'
         "status": "game_over" if s.game_over else "playing",  # UI expects 'status'
@@ -124,20 +125,6 @@ async def _run_ai_turns(game_id: str) -> None:
         # Run the blocking AI turn off the event loop
         turn_result = await asyncio.to_thread(mgr.run_ai_turn)
 
-        # Broadcast chat messages generated during the turn
-        for chat in mgr.chat_messages[-5:]:
-            payload = {
-                "sender": chat["agent"].capitalize(),
-                "team": chat["team"],
-                "message": chat["message"],
-                "timestamp": datetime.fromtimestamp(chat["timestamp"]).isoformat(),
-            }
-            await ws_manager.broadcast(game_id, "chat_message", payload)
-
-        # Broadcast agent logs generated during the turn
-        for log_entry in mgr.agent_logs[-5:]:
-            await ws_manager.broadcast(game_id, "agent_log", log_entry)
-
         await ws_manager.broadcast(game_id, "ai_turn_complete", turn_result)
         await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
 
@@ -168,8 +155,47 @@ async def new_game(req: NewGameRequest):
     human_team = TeamColor(req.team)
     human_role = PlayerRole(req.role)
 
+    loop = asyncio.get_running_loop()
+
     try:
         mgr = GameManager(api_key=api_key)
+
+        def handle_log(entry):
+            if getattr(mgr, "state", None):
+                asyncio.run_coroutine_threadsafe(
+                    ws_manager.broadcast(mgr.state.game_id, "agent_log", entry), loop
+                )
+
+        def handle_chat(chat):
+            if getattr(mgr, "state", None):
+                payload = {
+                    "sender": (
+                        chat["agent"].capitalize()
+                        if chat["agent"] != "human"
+                        else "You"
+                    ),
+                    "team": chat["team"],
+                    "message": chat["message"],
+                    "timestamp": datetime.fromtimestamp(chat["timestamp"]).isoformat(),
+                }
+                asyncio.run_coroutine_threadsafe(
+                    ws_manager.broadcast(mgr.state.game_id, "chat_message", payload),
+                    loop,
+                )
+
+        def handle_state():
+            if getattr(mgr, "state", None):
+                asyncio.run_coroutine_threadsafe(
+                    ws_manager.broadcast(
+                        mgr.state.game_id, "state_update", _state_payload(mgr)
+                    ),
+                    loop,
+                )
+
+        mgr.on_log_callback = handle_log
+        mgr.on_chat_callback = handle_chat
+        mgr.on_state_callback = handle_state
+
         state = await asyncio.to_thread(mgr.new_game, config, human_team, human_role)
         _games[state.game_id] = mgr
 
@@ -211,7 +237,7 @@ async def submit_clue(game_id: str, req: ClueRequest):
 
         # Generate teammate chat reaction to human clue
         try:
-            chat = await asyncio.to_thread(
+            await asyncio.to_thread(
                 mgr._generate_chat,
                 "clue_given",
                 {
@@ -222,14 +248,6 @@ async def submit_clue(game_id: str, req: ClueRequest):
                 "operative",
                 mgr.state.human_team.value,
             )
-            if chat:
-                payload = {
-                    "sender": chat["agent"].capitalize(),
-                    "team": chat["team"],
-                    "message": chat["message"],
-                    "timestamp": datetime.fromtimestamp(chat["timestamp"]).isoformat(),
-                }
-                await ws_manager.broadcast(game_id, "chat_message", payload)
         except Exception:
             pass
 
@@ -263,7 +281,7 @@ async def submit_guess(game_id: str, req: GuessRequest):
         )
         opponent_team = "blue" if mgr.state.human_team.value == "red" else "red"
         try:
-            chat = await asyncio.to_thread(
+            await asyncio.to_thread(
                 mgr._generate_chat,
                 event,
                 {
@@ -274,14 +292,6 @@ async def submit_guess(game_id: str, req: GuessRequest):
                 "spymaster",
                 opponent_team,
             )
-            if chat:
-                payload = {
-                    "sender": chat["agent"].capitalize(),
-                    "team": chat["team"],
-                    "message": chat["message"],
-                    "timestamp": datetime.fromtimestamp(chat["timestamp"]).isoformat(),
-                }
-                await ws_manager.broadcast(game_id, "chat_message", payload)
         except Exception:
             pass
 
@@ -320,16 +330,7 @@ async def handle_chat(game_id: str, req: ChatRequest):
         return {"error": str(e)}
 
     # Add human message to chat
-    chat_entry = mgr._add_chat("human", mgr.state.human_team.value, req.message)
-
-    # Broadcast to all
-    payload = {
-        "sender": "You",
-        "team": chat_entry["team"],
-        "message": chat_entry["message"],
-        "timestamp": datetime.fromtimestamp(chat_entry["timestamp"]).isoformat(),
-    }
-    await ws_manager.broadcast(game_id, "chat_message", payload)
+    mgr._add_chat("human", mgr.state.human_team.value, req.message)
 
     return {"success": True}
 
