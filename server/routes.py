@@ -63,9 +63,8 @@ def _get_game(game_id: str) -> GameManager:
 def _state_payload(mgr: GameManager) -> dict[str, Any]:
     """Build a JSON-serialisable snapshot of the game state."""
     s = mgr.state
-    is_spymaster = (
-        s.current_team == s.human_team and s.human_role == PlayerRole.SPYMASTER
-    )
+    is_spymaster = s.human_role == PlayerRole.SPYMASTER
+    show_full_board = is_spymaster or s.game_over
 
     # New UI expects 'clue' at top level
     current_clue = None
@@ -85,7 +84,9 @@ def _state_payload(mgr: GameManager) -> dict[str, Any]:
                 "revealed": c["revealed"],
                 "type": c["card_type"],  # UI expects 'type' instead of 'card_type'
             }
-            for c in (s.get_spymaster_board() if is_spymaster else s.get_public_board())
+            for c in (
+                s.get_spymaster_board() if show_full_board else s.get_public_board()
+            )
         ],
         "current_turn": s.current_team.value,  # UI expects 'current_turn'
         "status": "game_over" if s.game_over else "playing",  # UI expects 'status'
