@@ -114,7 +114,9 @@ const TRANSLATIONS = {
     thinking: "Thinking",
     clue: "Clue",
     guess: "Guess",
-    reflection: "Reflection"
+    reflection: "Reflection",
+    quit: "Quit",
+    return_home: "Home"
   },
   ar: {
     game_title: "CODENAMES",
@@ -176,7 +178,9 @@ const TRANSLATIONS = {
     thinking: "يفكر",
     clue: "تلميح",
     guess: "تخمين",
-    reflection: "تأمل"
+    reflection: "تأمل",
+    quit: "مغادرة",
+    return_home: "الرئيسية"
   }
 };
 
@@ -194,6 +198,7 @@ let $gameOverOverlay, $gameOverIcon, $gameOverTitle, $gameOverSubtitle;
 let $goRed, $goBlue, $revealBoardBtn, $playAgainBtn, $confettiContainer;
 let $postGameActions, $headerNewGameBtn, $headerQuickRestartBtn;
 let $toastContainer;
+let $quitBtn;
 
 // ─── Localization Logic ──────────────────────────────
 
