@@ -182,8 +182,18 @@ async def new_game(req: NewGameRequest):
                     loop,
                 )
 
+        def handle_state():
+            if getattr(mgr, "state", None):
+                asyncio.run_coroutine_threadsafe(
+                    ws_manager.broadcast(
+                        mgr.state.game_id, "state_update", _state_payload(mgr)
+                    ),
+                    loop,
+                )
+
         mgr.on_log_callback = handle_log
         mgr.on_chat_callback = handle_chat
+        mgr.on_state_callback = handle_state
 
         state = await asyncio.to_thread(mgr.new_game, config, human_team, human_role)
         _games[state.game_id] = mgr

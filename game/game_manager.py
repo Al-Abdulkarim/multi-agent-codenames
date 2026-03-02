@@ -45,6 +45,7 @@ class GameManager:
         # Callbacks for instant streaming
         self.on_log_callback = None
         self.on_chat_callback = None
+        self.on_state_callback = None
 
         # Agent logs — list of {timestamp, agent, action, detail, reflection}
         self.chat_messages: list[dict] = []
@@ -272,6 +273,10 @@ class GameManager:
             "ai_operative",
             s.current_team.value,
         )
+
+        if self.on_state_callback:
+            self.on_state_callback()
+
         return {"success": True, "clue": clue, "number": number}
 
     def submit_human_guess(self, word: str) -> dict[str, Any]:
@@ -336,6 +341,9 @@ class GameManager:
             "ai_spymaster" if s.human_role == PlayerRole.OPERATIVE else "ai_operative",
             s.human_team.value,
         )
+
+        if self.on_state_callback:
+            self.on_state_callback()
 
         return {
             "success": True,
@@ -585,6 +593,8 @@ class GameManager:
     def pass_turn(self) -> dict[str, str]:
         """End the current team's turn early."""
         self._switch_turn()
+        if self.on_state_callback:
+            self.on_state_callback()
         return {"success": True, "current_team": self.state.current_team.value}
 
     def _switch_turn(self) -> None:
