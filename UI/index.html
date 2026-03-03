@@ -205,7 +205,6 @@
     <main id="board-area" class="board-area">
       <!-- Post Game Quick Actions -->
       <div id="post-game-actions" class="post-game-actions hidden">
-        <button type="button" id="header-home-btn" class="mini-btn danger" data-i18n="return_home">Quit</button>
         <button type="button" id="header-new-game-btn" class="mini-btn" data-i18n="new_game">New Game</button>
         <button type="button" id="header-quick-restart-btn" class="mini-btn primary" data-i18n="quick_restart">Quick
           Restart</button>
@@ -224,7 +223,7 @@
           <span class="score-dot blue-dot"></span>
           <span id="blue-remaining">Blue: 0 remaining</span>
         </div>
-        <button type="button" id="quit-btn" class="panel-toggle" aria-label="Leave game" title="Leave game">
+        <button type="button" id="quit-btn" class="panel-toggle" aria-label="Leave game" title="Leave game" onclick="showSetupScreen()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

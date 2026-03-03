@@ -502,7 +502,7 @@ function bindGameEvents() {
   });
 
   // Panel toggles
-  document.querySelectorAll('.panel-toggle').forEach(btn => {
+  document.querySelectorAll('.panel-toggle:not(#quit-btn)').forEach(btn => {
     btn.addEventListener('click', () => togglePanel(btn.dataset.panel));
   });
   document.querySelectorAll('.mobile-toggle-btn').forEach(btn => {
@@ -533,7 +533,6 @@ function bindGameEvents() {
     boardRevealed = true;
     renderBoard(gameState);
   });
-  $headerHomeBtn.addEventListener('click', showSetupScreen);
   $headerNewGameBtn.addEventListener('click', showSetupScreen);
   $headerQuickRestartBtn.addEventListener('click', handleQuickRestart);
   $quitBtn.addEventListener('click', showSetupScreen);
