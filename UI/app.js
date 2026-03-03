@@ -39,7 +39,8 @@ let lastClueWord = null;
 let chatAutoScroll = true;
 let logAutoScroll = true;
 let boardRevealed = false;
-let renderedChatCount = 0;
+let renderedChatIds = new Set();
+let renderedChatFingerprints = new Set();
 let renderedLogsCount = 0;
 
 // ─── Setup Config ────────────────────────────────────
@@ -315,7 +316,8 @@ function showSetupScreen() {
   gameState = null;
   guessCount = 0;
   boardRevealed = false;
-  renderedChatCount = 0;
+  renderedChatIds = new Set();
+  renderedChatFingerprints = new Set();
   renderedLogsCount = 0;
   $chatMessages.innerHTML = `<div class="empty-state">${TRANSLATIONS[config.language]?.no_messages || 'No messages yet...'}</div>`;
   $logsList.innerHTML = `<div class="empty-state">${TRANSLATIONS[config.language]?.no_activity || 'No agent activity yet...'}</div>`;
@@ -910,18 +912,26 @@ async function handleEndTurn() {
 
 function renderChat(messages) {
   if (!messages || messages.length === 0) {
-    if (renderedChatCount === 0) {
+    if (renderedChatIds.size === 0) {
       const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
       $chatMessages.innerHTML = `<div class="empty-state">${dict.no_messages || 'No messages yet...'}</div>`;
     }
     return;
   }
 
-  // Only render new messages
-  const newMessages = messages.slice(renderedChatCount);
+  // Only render messages we haven't seen yet (by server ID or content fingerprint)
+  const newMessages = messages.filter(m => {
+    if (m.id && renderedChatIds.has(m.id)) return false;
+    const fp = getChatFingerprint(m);
+    if (renderedChatFingerprints.has(fp)) return false;
+    return true;
+  });
   if (newMessages.length > 0) {
-    renderedChatCount += newMessages.length;
-    newMessages.forEach(msg => appendChatBubble(msg));
+    newMessages.forEach(msg => {
+      if (msg.id) renderedChatIds.add(msg.id);
+      renderedChatFingerprints.add(getChatFingerprint(msg));
+      appendChatBubble(msg);
+    });
     scrollChatIfNeeded();
   }
 }
@@ -958,7 +968,24 @@ function appendChatBubble(msg) {
   $chatMessages.appendChild(div);
 }
 
+function getChatFingerprint(msg) {
+  // Bucket timestamps to 3-second windows to handle slight differences
+  const t = msg.timestamp ? new Date(msg.timestamp).getTime() : 0;
+  const bucket = Math.floor(t / 3000);
+  return `${msg.sender || ''}|${msg.message || ''}|${bucket}`;
+}
+
 function addChatMessage(msg) {
+  // Primary dedup: by server-assigned ID
+  if (msg.id) {
+    if (renderedChatIds.has(msg.id)) return;
+    renderedChatIds.add(msg.id);
+  }
+  // Secondary dedup: by content fingerprint (catches messages without stable IDs)
+  const fp = getChatFingerprint(msg);
+  if (renderedChatFingerprints.has(fp)) return;
+  renderedChatFingerprints.add(fp);
+
   appendChatBubble(msg);
   scrollChatIfNeeded();
 }
@@ -978,8 +1005,10 @@ function scrollLogsIfNeeded() {
 async function sendChatMessage(text) {
   $chatInput.value = '';
 
-  // Show immediately as local message
+  // Show immediately as local message with a temporary local ID
+  const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   addChatMessage({
+    id: localId,
     sender: 'You',
     team: config.team,
     message: text,
@@ -987,11 +1016,16 @@ async function sendChatMessage(text) {
   });
 
   try {
-    await fetch(`${API_BASE}/api/game/${gameId}/chat`, {
+    const res = await fetch(`${API_BASE}/api/game/${gameId}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text }),
     });
+    const data = await res.json();
+    // Map the server-assigned ID → prevent re-render when state_update arrives
+    if (data && data.id) {
+      renderedChatIds.add(data.id);
+    }
   } catch (err) {
     const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
     showToast(dict.error_send || 'Failed to send message', 'error');
