@@ -7,6 +7,7 @@ Now includes chat commentary and agent-log tracking.
 
 from __future__ import annotations
 
+import random
 import time
 import uuid
 import logging
@@ -81,67 +82,152 @@ class GameManager:
             self.on_chat_callback(entry)
         return entry
 
-    def _generate_chat(
-        self, event_type: str, context: dict, agent_role: str, agent_team: str
-    ) -> dict | None:
-        """Generate a chat message and return the entry."""
-        try:
-            lang = self.state.config.language.value if self.state else "en"
-            # Localized role names for the chat sender
-            lang_roles = {
-                "en": {
-                    "spymaster": "Spymaster",
-                    "operative": "Operative",
-                    "ai_spymaster": "AI Spymaster",
-                    "ai_operative": "AI Operative",
-                },
-                "ar": {
-                    "spymaster": "رئيس المخابرات",
-                    "operative": "العميل الميداني",
-                    "ai_spymaster": "رئيس المخابرات (آلي)",
-                    "ai_operative": "العميل الميداني (آلي)",
-                },
+    def _build_game_context(self, extra: dict | None = None) -> dict:
+        """Build a structured game-state dict for chat agent prompts."""
+        s = self.state
+        ctx: dict = {
+            "current_team": s.current_team.value if s else "?",
+            "current_phase": s.current_phase if s else "?",
+            "red_remaining": s.red_remaining if s else 0,
+            "blue_remaining": s.blue_remaining if s else 0,
+            "guesses_remaining": s.guesses_remaining if s else 0,
+            "current_clue": "N/A",
+            "current_number": 0,
+        }
+        if s and s.turns_history:
+            last = s.turns_history[-1]
+            if last.clue:
+                ctx["current_clue"] = last.clue.word
+                ctx["current_number"] = last.clue.number
+        if extra:
+            ctx.update(extra)
+        return ctx
+
+    def _persona_to_label(self, persona: str, lang: str) -> str:
+        """Map a persona key to a human-readable chat sender label."""
+        opp_team = "blue" if self.state.human_team.value == "red" else "red"
+        if lang == "ar":
+            t_name = "الأحمر" if opp_team == "red" else "الأزرق"
+            labels = {
+                "opponent_spymaster": f"خصمك رئيس المخابرات ({t_name})",
+                "opponent_operative": f"خصمك العميل الميداني ({t_name})",
+                "teammate": "زميلك",
             }
-            role_map = lang_roles.get(lang, lang_roles["en"])
+        else:
+            t_cap = opp_team.capitalize()
+            labels = {
+                "opponent_spymaster": f"Opponent Spymaster ({t_cap})",
+                "opponent_operative": f"Opponent Operative ({t_cap})",
+                "teammate": "Partner",
+            }
+        return labels.get(persona, persona)
 
-            # Determine if this agent is on the human's team
-            is_same_team = agent_team == self.state.human_team.value
+    def _pick_speakers(self, event_type: str, ctx: dict) -> list[str]:
+        """Apply trigger rules to decide who speaks.  Max 2 per event."""
+        speakers: list[str] = []
+        is_opponent = ctx.get("is_opponent_action", False)
 
-            # SILENCE duplicates: If agent is on human's team AND has the same
-            # role the human chose, SILENCE it — the human fills that role.
-            clean_role = agent_role.replace("ai_", "")
-            if is_same_team and clean_role == self.state.human_role.value:
-                return None
-
-            # Build the display label for the chat sender
-            if lang == "ar":
-                if is_same_team:
-                    r_name = role_map.get(clean_role, "مساعد")
-                    localized_role = f"زميلك ({r_name})"
-                else:
-                    team_name = "الأحمر" if agent_team == "red" else "الأزرق"
-                    translated_role = role_map.get(clean_role, "وكيل")
-                    localized_role = f"خصمك {translated_role} ({team_name})"
+        if event_type == "bad_guess":
+            if is_opponent:
+                # Opponent guessed wrong → teammate reacts (relieved)
+                speakers.append("teammate")
             else:
-                if is_same_team:
-                    p_name = role_map.get(clean_role, "Agent")
-                    localized_role = f"Partner ({p_name})"
-                else:
-                    role_word = role_map.get(clean_role, "Agent")
-                    t_cap = agent_team.capitalize()
-                    localized_role = f"Opponent {role_word} ({t_cap})"
+                # Human / teammate guessed wrong → 1 random opponent + teammate 35%
+                speakers.append(
+                    random.choice(["opponent_spymaster", "opponent_operative"])
+                )
+                if random.random() < 0.35:
+                    speakers.append("teammate")
 
-            msg = self.chat_agent.react(
-                event_type=event_type,
-                context=context,
-                language=lang,
-                agent_role=agent_role,
-                agent_team=agent_team,
+        elif event_type == "good_guess":
+            if is_opponent:
+                # Opponent guessed correct — low-key reaction
+                if random.random() < 0.3:
+                    speakers.append(
+                        random.choice(["opponent_spymaster", "opponent_operative"])
+                    )
+            else:
+                # Human / teammate guessed correct → teammate celebrates
+                speakers.append("teammate")
+                if random.random() < 0.25:
+                    speakers.append(
+                        random.choice(["opponent_spymaster", "opponent_operative"])
+                    )
+
+        elif event_type == "sweep":
+            if is_opponent:
+                # Opponent swept all clue cards → up to 2 opponents
+                speakers.append("opponent_operative")
+                if random.random() < 0.6:
+                    speakers.append("opponent_spymaster")
+            else:
+                # Teammate swept → teammate celebrates
+                speakers.append("teammate")
+
+        elif event_type == "assassin":
+            if is_opponent:
+                # Opponent hit assassin → teammate celebrates
+                speakers.append("teammate")
+            else:
+                # Human team hit assassin → opponent mocks + teammate reacts
+                speakers.append(
+                    random.choice(["opponent_spymaster", "opponent_operative"])
+                )
+                speakers.append("teammate")
+
+        elif event_type == "clue_given":
+            if is_opponent:
+                if random.random() < 0.5:
+                    speakers.append("teammate")
+            else:
+                if random.random() < 0.6:
+                    speakers.append("teammate")
+
+        elif event_type == "taunt":
+            speakers.append(
+                random.choice(["opponent_spymaster", "opponent_operative"])
             )
-            return self._add_chat(localized_role, agent_team, msg)
-        except Exception as e:
-            log.warning("Chat generation failed: %s", e)
-            return None
+
+        return speakers[:2]  # hard cap at 2 messages per event
+
+    def _emit_chat_reactions(
+        self, event_type: str, event_ctx: dict
+    ) -> list[dict]:
+        """Decide who speaks, generate messages with delays.  Returns chat entries."""
+        s = self.state
+        if s is None:
+            return []
+
+        speakers = self._pick_speakers(event_type, event_ctx)
+        if not speakers:
+            return []
+
+        lang = s.config.language.value
+        opp_team = "blue" if s.human_team.value == "red" else "red"
+        game_ctx = self._build_game_context(event_ctx)
+
+        entries: list[dict] = []
+        for i, persona in enumerate(speakers):
+            if i > 0:
+                time.sleep(random.uniform(0.3, 0.5))  # 300-500 ms delay
+
+            label = self._persona_to_label(persona, lang)
+            team = opp_team if persona.startswith("opponent") else s.human_team.value
+
+            try:
+                msg = self.chat_agent.generate(
+                    persona=persona,
+                    event_type=event_type,
+                    game_context=game_ctx,
+                    chat_history=self.chat_messages[-6:],
+                    language=lang,
+                )
+                entry = self._add_chat(label, team, msg)
+                entries.append(entry)
+            except Exception as e:
+                log.warning("Chat generation failed for %s: %s", persona, e)
+
+        return entries
 
     # ── game setup ──────────────────────────────────────────────────
 
@@ -261,19 +347,6 @@ class GameManager:
         s.current_phase = "guess"
         log.info("Clue recorded: '%s' for %d (%s)", clue, number, s.current_team.value)
 
-        # Generate teammate chat reaction (the AI operative on human's team)
-        self._generate_chat(
-            "clue_given",
-            {
-                "clue": clue,
-                "number": number,
-                "actor": "human",
-                "team": s.current_team.value,
-            },
-            "ai_operative",
-            s.current_team.value,
-        )
-
         if self.on_state_callback:
             self.on_state_callback()
 
@@ -328,19 +401,6 @@ class GameManager:
         # wrong guess or out of guesses → end turn
         if not correct or s.guesses_remaining <= 0:
             self._switch_turn()
-
-        # Partner reaction (teammate AI agent)
-        self._generate_chat(
-            "good_guess" if correct else "bad_guess",
-            {
-                "word": word,
-                "correct": correct,
-                "actor": "human",
-                "team": s.human_team.value,
-            },
-            "ai_spymaster" if s.human_role == PlayerRole.OPERATIVE else "ai_operative",
-            s.human_team.value,
-        )
 
         if self.on_state_callback:
             self.on_state_callback()
@@ -416,19 +476,26 @@ class GameManager:
             clue.reflection,
         )
 
-        # Generate chat comment from this spymaster
-        chat_entry = self._generate_chat(
+        # Emit chat reactions for this clue
+        is_opponent = team != s.human_team.value
+        chat_entries = self._emit_chat_reactions(
             "clue_given",
-            {"clue": clue.clue, "number": clue.number, "team": team},
-            "ai_spymaster",
-            team,
+            {
+                "clue": clue.clue,
+                "number": clue.number,
+                "is_opponent_action": is_opponent,
+                "event_description": (
+                    f"{'Opponent' if is_opponent else 'Teammate'} Spymaster "
+                    f"gave clue '{clue.clue}' for {clue.number}"
+                ),
+            },
         )
 
         return {
             "clue": clue.clue,
             "number": clue.number,
             "log": self.agent_logs[-1] if self.agent_logs else None,
-            "chat": chat_entry,
+            "chat": chat_entries,
         }
 
     def run_ai_guess(self) -> list[dict[str, Any]]:
@@ -445,6 +512,8 @@ class GameManager:
             model=self.model,
         )
         guesses: list[dict[str, Any]] = []
+        clue_number = s.turns_history[-1].clue.number if s.turns_history else 0
+        is_opponent = team != s.human_team.value
 
         while s.guesses_remaining > 0 and not s.game_over:
             thinking_msg = (
@@ -487,21 +556,6 @@ class GameManager:
             result = self.submit_human_guess(guess.word)
             correct = result.get("correct", False)
 
-            # Generate chat reaction from this operative
-            event = (
-                "good_guess"
-                if correct
-                else (
-                    "assassin" if result.get("revealed") == "assassin" else "bad_guess"
-                )
-            )
-            chat_entry = self._generate_chat(
-                event,
-                {"word": guess.word, "correct": correct, "team": team},
-                "ai_operative",
-                team,
-            )
-
             guesses.append(
                 {
                     "word": guess.word,
@@ -510,12 +564,50 @@ class GameManager:
                     "correct": correct,
                     "revealed": result.get("revealed"),
                     "log": self.agent_logs[-1] if self.agent_logs else None,
-                    "chat": chat_entry,
+                    "chat": None,
                 }
             )
 
             if not correct:
+                # Wrong guess or assassin — emit reaction
+                event = (
+                    "assassin"
+                    if result.get("revealed") == "assassin"
+                    else "bad_guess"
+                )
+                chat_entries = self._emit_chat_reactions(
+                    event,
+                    {
+                        "word": guess.word,
+                        "correct": False,
+                        "is_opponent_action": is_opponent,
+                        "result": result.get("revealed", "wrong"),
+                        "event_description": (
+                            f"{'Opponent' if is_opponent else 'Teammate'} operative "
+                            f"guessed '{guess.word}' — {result.get('revealed', 'wrong')}!"
+                        ),
+                    },
+                )
+                guesses[-1]["chat"] = chat_entries
                 break
+
+        # Sweep detection: did operative nail all clue words?
+        correct_count = sum(1 for g in guesses if g["correct"])
+        if correct_count > 0 and correct_count >= clue_number:
+            chat_entries = self._emit_chat_reactions(
+                "sweep",
+                {
+                    "correct_count": correct_count,
+                    "clue_number": clue_number,
+                    "is_opponent_action": is_opponent,
+                    "event_description": (
+                        f"{'Opponent' if is_opponent else 'Teammate'} operative "
+                        f"nailed all {correct_count} words from the clue!"
+                    ),
+                },
+            )
+            if guesses:
+                guesses[-1]["chat"] = chat_entries
 
         return guesses
 
@@ -523,24 +615,15 @@ class GameManager:
         """Run the appropriate AI action(s) for the current phase. Returns summary with chat and logs."""
         s = self.state
         team = s.current_team.value
-        opponent_team = "blue" if team == "red" else "red"
 
-        # Taunt only at the start of a clue phase and if it's the opponent team
+        # Taunt at the start of opponent's clue phase
         if s.current_phase == "clue" and team != s.human_team.value:
-            self._generate_chat(
-                (
-                    "taunt"
-                    if s.red_remaining > 2 and s.blue_remaining > 2
-                    else "turn_start"
-                ),
+            self._emit_chat_reactions(
+                "taunt",
                 {
-                    "team": team,
-                    "red_left": s.red_remaining,
-                    "blue_left": s.blue_remaining,
-                    "is_my_team": False,
+                    "is_opponent_action": True,
+                    "event_description": "Opponent's turn is starting.",
                 },
-                "ai_spymaster",
-                team,
             )
 
         clue_result = None
@@ -559,23 +642,6 @@ class GameManager:
                 return {"clue": None, "guesses": [], "game_over": s.game_over}
             if not s.game_over:
                 guesses = self.run_ai_guess()
-
-        # Post-turn status chat from the other team
-        # Only do this if the team actually switched (meaning we finished guessing)
-        if s.current_phase == "clue" and s.current_team.value != team:
-            my_remaining = s.red_remaining if team == "red" else s.blue_remaining
-            opp_remaining = s.blue_remaining if team == "red" else s.red_remaining
-            status_event = "winning" if my_remaining < opp_remaining else "losing"
-            self._generate_chat(
-                status_event,
-                {
-                    "team": opponent_team,
-                    "my_remaining": opp_remaining,
-                    "opp_remaining": my_remaining,
-                },
-                "operative",
-                opponent_team,
-            )
 
         return {
             "clue": (

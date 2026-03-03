@@ -235,18 +235,17 @@ async def submit_clue(game_id: str, req: ClueRequest):
         await ws_manager.broadcast(game_id, "clue_given", result)
         await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
 
-        # Generate teammate chat reaction to human clue
+        # Chat reactions to human clue
         try:
             await asyncio.to_thread(
-                mgr._generate_chat,
+                mgr._emit_chat_reactions,
                 "clue_given",
                 {
                     "clue": req.clue,
                     "number": req.number,
-                    "team": mgr.state.human_team.value,
+                    "is_opponent_action": False,
+                    "event_description": f"Human Spymaster gave clue '{req.clue}' for {req.number}",
                 },
-                "operative",
-                mgr.state.human_team.value,
             )
         except Exception:
             pass
@@ -273,24 +272,26 @@ async def submit_guess(game_id: str, req: GuessRequest):
         await ws_manager.broadcast(game_id, "guess_made", result)
         await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
 
-        # Generate opponent chat reaction to human guess
+        # Chat reactions to human guess
         event = (
             "good_guess"
             if result.get("correct")
             else ("assassin" if result.get("revealed") == "assassin" else "bad_guess")
         )
-        opponent_team = "blue" if mgr.state.human_team.value == "red" else "red"
         try:
             await asyncio.to_thread(
-                mgr._generate_chat,
+                mgr._emit_chat_reactions,
                 event,
                 {
                     "word": req.word,
                     "correct": result.get("correct"),
-                    "team": opponent_team,
+                    "is_opponent_action": False,
+                    "result": result.get("revealed", "unknown"),
+                    "event_description": (
+                        f"Human guessed '{req.word}' \u2014 "
+                        f"{'correct!' if result.get('correct') else result.get('revealed', 'wrong')}"
+                    ),
                 },
-                "spymaster",
-                opponent_team,
             )
         except Exception:
             pass
