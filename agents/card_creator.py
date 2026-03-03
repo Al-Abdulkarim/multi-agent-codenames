@@ -28,7 +28,7 @@ class CardCreatorAgent:
     """Pre-game agent that generates the word list for the board."""
 
     def __init__(self, api_key: str, model: str = "gemini/gemini-2.5-flash"):
-        self.llm = LLM(model=model, api_key=api_key, temperature=0.8)
+        self.llm = LLM(model=model, api_key=api_key, temperature=2)
 
     # ── factory ─────────────────────────────────────────────────────
 

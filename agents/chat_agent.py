@@ -155,7 +155,7 @@ class ChatAgent:
     """Generates short, contextual, personality-driven game commentary."""
 
     MODEL = "gemini-2.5-flash"
-    MAX_TOKENS = 120
+    MAX_TOKENS = 500
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY", "")
