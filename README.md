@@ -7,6 +7,39 @@ The original game requires 4 players. Since you can't play single-player, this p
 
 ---
 
+## 🚀 Getting Started
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Al-Abdulkarim/multi-agent-codenames.git
+cd multi-agent-codenames
+```
+
+### 2. Install `uv` (Package Manager)
+
+This project uses **uv** for dependency management. If you don't have it installed, refer to the setup guide:
+
+📄 [docs/getting-started-with-uv.md](docs/getting-started-with-uv.md)
+
+### 3. Install Dependencies
+
+```bash
+uv sync
+```
+
+This will create a virtual environment and install all required packages automatically.
+
+### 4. Run the Server
+
+```bash
+uv run python main.py --mode server
+```
+
+Then open your browser and navigate to **http://localhost:8000**.
+
+---
+
 ## 🎯 Game Rules
 
 1. A board of **word cards** is laid out (15, 25, or 35 cards).
