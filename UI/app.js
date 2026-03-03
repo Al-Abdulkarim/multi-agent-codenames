@@ -197,7 +197,7 @@ let $logsPanel, $logsList;
 let $chatPanel, $chatMessages, $chatInput, $chatSendBtn;
 let $gameOverOverlay, $gameOverIcon, $gameOverTitle, $gameOverSubtitle;
 let $goRed, $goBlue, $revealBoardBtn, $playAgainBtn, $confettiContainer;
-let $postGameActions, $headerNewGameBtn, $headerQuickRestartBtn;
+let $postGameActions, $headerHomeBtn, $headerNewGameBtn, $headerQuickRestartBtn;
 let $toastContainer;
 let $quitBtn;
 
@@ -299,8 +299,11 @@ function cacheDOM() {
   $confettiContainer = document.getElementById('confetti-container');
 
   $postGameActions = document.getElementById('post-game-actions');
+  $headerHomeBtn = document.getElementById('header-home-btn');
   $headerNewGameBtn = document.getElementById('header-new-game-btn');
   $headerQuickRestartBtn = document.getElementById('header-quick-restart-btn');
+
+  $quitBtn = document.getElementById('quit-btn');
 
   $toastContainer = document.getElementById('toast-container');
 }
@@ -431,6 +434,9 @@ async function createNewGame(cfg) {
       throw new Error(errTxt);
     }
     const data = await res.json();
+    if (data.error || !data.game_id) {
+      throw new Error(data.error || 'Failed to create game: invalid response');
+    }
     gameId = data.game_id;
     gameState = data;
     guessCount = 0;
@@ -498,7 +504,7 @@ function bindGameEvents() {
   });
 
   // Panel toggles
-  document.querySelectorAll('.panel-toggle').forEach(btn => {
+  document.querySelectorAll('.panel-toggle:not(#quit-btn)').forEach(btn => {
     btn.addEventListener('click', () => togglePanel(btn.dataset.panel));
   });
   document.querySelectorAll('.mobile-toggle-btn').forEach(btn => {
@@ -531,6 +537,7 @@ function bindGameEvents() {
   });
   $headerNewGameBtn.addEventListener('click', showSetupScreen);
   $headerQuickRestartBtn.addEventListener('click', handleQuickRestart);
+  $quitBtn.addEventListener('click', showSetupScreen);
 }
 
 function togglePanel(panelId) {
@@ -563,7 +570,7 @@ function renderFullState(state) {
   if (chatAutoScroll) scrollChatIfNeeded();
   if (logAutoScroll) scrollLogsIfNeeded();
 
-  if (state.status !== 'playing') {
+  if (state.status === 'game_over') {
     showGameOver(state);
   }
 }
@@ -571,23 +578,23 @@ function renderFullState(state) {
 // ─── Scores ──────────────────────────────────────────
 
 function updateScores(state) {
-  const oldRed = $redRemaining.textContent;
-  const oldBlue = $blueRemaining.textContent;
-
   const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
-  $redRemaining.textContent = dict.red_remaining_text ? dict.red_remaining_text.replace('{n}', state.red_remaining) : state.red_remaining;
-  $blueRemaining.textContent = dict.blue_remaining_text ? dict.blue_remaining_text.replace('{n}', state.blue_remaining) : state.blue_remaining;
+  const newRed = dict.red_remaining_text ? dict.red_remaining_text.replace('{n}', state.red_remaining) : '' + state.red_remaining;
+  const newBlue = dict.blue_remaining_text ? dict.blue_remaining_text.replace('{n}', state.blue_remaining) : '' + state.blue_remaining;
 
-  if (oldRed !== '' + state.red_remaining) {
+  if ($redRemaining.textContent !== newRed) {
     $redRemaining.classList.remove('score-bounce');
     void $redRemaining.offsetWidth; // force reflow
     $redRemaining.classList.add('score-bounce');
   }
-  if (oldBlue !== '' + state.blue_remaining) {
+  $redRemaining.textContent = newRed;
+
+  if ($blueRemaining.textContent !== newBlue) {
     $blueRemaining.classList.remove('score-bounce');
     void $blueRemaining.offsetWidth;
     $blueRemaining.classList.add('score-bounce');
   }
+  $blueRemaining.textContent = newBlue;
 }
 
 // ─── Turn Indicator ──────────────────────────────────
