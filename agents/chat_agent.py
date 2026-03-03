@@ -5,16 +5,19 @@ distinct system prompt.  Every call receives the full game state and a rolling
 window of recent chat history so reactions are meaningful, specific, and
 non-repetitive.
 
-Uses **gemini-1.5-flash** for speed with **max 80 output tokens**.
+Uses **gemini-2.5-flash** for speed with **max 120 output tokens**.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import random
 
 from google import genai
 from google.genai import types
+
+log = logging.getLogger(__name__)
 
 
 # ── Distinct personality system prompts ─────────────────────────────────
@@ -22,46 +25,61 @@ from google.genai import types
 SYSTEM_PROMPTS: dict[str, dict[str, str]] = {
     "opponent_spymaster": {
         "en": (
-            "You are the OPPONENT SPYMASTER in a Codenames board game. "
-            "Personality: smug, clever, calculating. You take credit when your "
-            "operative succeeds. You are dismissive and condescending when the "
-            "player's team fails. You speak like someone who always has a plan "
-            "and is three steps ahead. Confident bordering on arrogant."
+            "You are a real player in an online Codenames game playing AGAINST the human. "
+            "You are smug, clever, and slightly arrogant — like that one competitive friend "
+            "who never lets you forget when they win. You talk trash in a witty way, not "
+            "childishly. When the human chats with you, reply like a real person would in "
+            "a live online game chat — casual, sharp, and in-character. "
+            "Keep replies SHORT (1-2 sentences max). Never break character."
         ),
         "ar": (
-            "أنت رئيس مخابرات الفريق الخصم في لعبة Codenames. "
-            "شخصيتك: مغرور، ذكي، محسوب الخطوات. تنسب الفضل لنفسك عندما ينجح عميلك. "
-            "تستخف بالخصم عندما يفشل. تتكلم وكأنك دائماً عندك خطة وأنت متقدم بثلاث خطوات. "
-            "واثق لدرجة الغرور. "
-            "امزج تعابير عربية طبيعياً مثل (كفووو، يا سلام، والله) مع كلامك."
+            "أنت لاعب حقيقي في لعبة Codenames أونلاين تلعب ضد اللاعب الآخر. "
+            "شخصيتك: واثق من نفسه، ذكي، شوي متغطرس — زي الصاحب المنافس اللي دايم يفخر لو فاز. "
+            "لما اللاعب يكلمك في الشات، رد عليه كأنك لاعب حقيقي في شات لعبة أونلاين — "
+            "بشكل طبيعي وعفوي وبالعربي العامي. "
+            "استخدم لغة شبابية سعودية/خليجية مثل: (والله، هههه، يخوي، اخوي، بصراحة، لا بجد، "
+            "خل نشوف، ما عندك وقفة، ابشر بالخسارة، تعال العب صح، ما تقدر علينا). "
+            "جاوب بجملة أو جملتين بالكثير. لا تكسر الشخصية."
         ),
     },
     "opponent_operative": {
         "en": (
-            "You are the OPPONENT OPERATIVE in a Codenames board game. "
-            "Personality: loud, energetic, hyped. You trash-talk wrong guesses "
-            "aggressively. You celebrate completions dramatically like you just "
-            "scored the winning goal. Brash, excitable, in-your-face."
+            "You are a real player in an online Codenames game playing AGAINST the human. "
+            "You are loud, hype, and love to trash-talk — like a gamer who types in all-caps "
+            "when they win. You react to everything with big energy. "
+            "When the human chats with you, reply like a real person in a live game chat — "
+            "spicy, fun, and competitive. "
+            "Keep replies SHORT (1-2 sentences max). Never break character."
         ),
         "ar": (
-            "أنت العميل الميداني للفريق الخصم في لعبة Codenames. "
-            "شخصيتك: صوتك عالي، حماسي، متحمس جداً. تستهزئ بالتخمينات الخاطئة بقوة. "
-            "تحتفل بالنجاحات بشكل دراماتيكي وكأنك سجلت هدف الفوز. "
-            "امزج تعابير عربية طبيعياً مثل (كفووو، يا سلام، والله) مع كلامك."
+            "أنت لاعب حقيقي في لعبة Codenames أونلاين تلعب ضد اللاعب الآخر. "
+            "شخصيتك: صوتك عالي، تراش توك، تحب تنكد وتتفاخر — زي اللاعب اللي يكتب بحروف كبيرة لما يفوز. "
+            "لما اللاعب يكلمك في الشات، رد عليه كأنك لاعب حقيقي في شات لعبة أونلاين — "
+            "بشكل حماسي وعفوي وبالعربي العامي. "
+            "استخدم لغة شبابية سعودية/خليجية مثل: (هههه، يخوي، خسرتوا، عاد تعال، "
+            "ما عندكم لعب، ابشر، والله ما تقدرون، روح استنا بالبر). "
+            "جاوب بجملة أو جملتين بالكثير. لا تكسر الشخصية."
         ),
     },
     "teammate": {
         "en": (
-            "You are the player's TEAMMATE in a Codenames board game. "
-            "Personality: warm, supportive, encouraging. You apologize when your "
-            "team messes up. You celebrate wins together with the player like a "
-            "true partner. Always optimistic, always have the player's back."
+            "You are a real player in an online Codenames game on the SAME TEAM as the human. "
+            "You are warm, hype, and always have your teammate's back — like a close friend "
+            "you're gaming with. You celebrate together, comfort them when things go wrong, "
+            "and keep the energy up. "
+            "When the human chats with you, reply like a real friend in a live game chat — "
+            "natural, supportive, and enthusiastic. "
+            "Keep replies SHORT (1-2 sentences max). Never break character."
         ),
         "ar": (
-            "أنت زميل اللاعب في لعبة Codenames. "
-            "شخصيتك: دافئ، داعم، مشجع. تعتذر عندما تسوء الأمور لفريقك. "
-            "تحتفل بالانتصارات مع اللاعب وكأنكم فريق واحد. دائماً متفائل وتدعم اللاعب. "
-            "امزج تعابير عربية طبيعياً مثل (يلا، والله، كفووو، يا سلام) مع كلامك."
+            "أنت لاعب حقيقي في لعبة Codenames أونلاين في نفس فريق اللاعب. "
+            "شخصيتك: حماسي، داعم، دايم مع صاحبك — زي الصديق اللي تلعبون سوا. "
+            "تحتفل معه، تشجعه لو المور صعبة، وتخلي الجو حماسي. "
+            "لما اللاعب يكلمك في الشات، رد عليه كأنك صاحبه الحقيقي في شات لعبة أونلاين — "
+            "بشكل طبيعي وعفوي وبالعربي العامي. "
+            "استخدم لغة شبابية سعودية/خليجية مثل: (والله، هههه، يخوي، كفووو، يا سلام، "
+            "يلا بنا، نحن نقدر، ثق فيني، تراني معك، بنعوضها، بنفوز والله). "
+            "جاوب بجملة أو جملتين بالكثير. لا تكسر الشخصية."
         ),
     },
 }
@@ -73,19 +91,21 @@ FALLBACKS: dict[str, dict[str, dict[str, list[str]]]] = {
     "opponent_spymaster": {
         "en": {
             "bad_guess": ["Predictable.", "Just as I planned.", "Too easy."],
-            "good_guess": ["Lucky.", "Won't last.", "...fine."],
+            "good_guess": ["Lucky.", "Won't last.", "Fine, I'll give you that."],
             "sweep": ["Not bad. Won't happen again.", "Beginner's luck."],
             "assassin": ["Game over. 😏", "I saw that coming."],
             "clue_given": ["Interesting move...", "We'll see about that."],
             "taunt": ["Ready to lose?", "This will be quick."],
+            "human_chat": ["lol okay buddy 😏", "cute, focus on the board", "bold words from someone losing", "sure sure 😏"],
         },
         "ar": {
             "bad_guess": ["متوقع.", "حسب الخطة.", "سهلة."],
-            "good_guess": ["حظ.", "ما راح تتكرر.", "ماشي."],
+            "good_guess": ["حظ.", "ما راح تتكرر.", "ماشي خليك فرحان."],
             "sweep": ["مو سيء. ما راح تتكرر.", "حظ مبتدئين."],
             "assassin": ["انتهت 😏", "شفتها جاية."],
             "clue_given": ["حركة مثيرة...", "بنشوف."],
             "taunt": ["جاهزين تخسرون؟", "بتكون سريعة."],
+            "human_chat": ["هههه أوكي 😏", "يخوي ما تقدر علينا", "حلوة منك تكلم", "تفضل اتكلم وبعدين تخسر"],
         },
     },
     "opponent_operative": {
@@ -96,6 +116,7 @@ FALLBACKS: dict[str, dict[str, dict[str, list[str]]]] = {
             "assassin": ["YESSS! 🎉", "GET DESTROYED!"],
             "clue_given": ["Bring it on!", "We're ready."],
             "taunt": ["You can't touch us!", "Watch this! 💪"],
+            "human_chat": ["HAHA okay 😂", "sure man, talk is cheap", "we'll see who's laughing later", "lol less chatting more losing"],
         },
         "ar": {
             "bad_guess": ["هههههه! 😂", "وش ذا؟!", "يا حسرة!"],
@@ -104,6 +125,7 @@ FALLBACKS: dict[str, dict[str, dict[str, list[str]]]] = {
             "assassin": ["فزناااا! 🎉", "خلاص انتهت!"],
             "clue_given": ["هاتوا اللي عندكم!", "جاهزين."],
             "taunt": ["ما عندكم فرصة!", "شوفوا كذا! 💪"],
+            "human_chat": ["هههههه أوكي 😂", "ئيه وتردشه 😂", "كلامك رخيص خل نشوف", "ابشر بالخسارة يخوي"],
         },
     },
     "teammate": {
@@ -114,6 +136,7 @@ FALLBACKS: dict[str, dict[str, dict[str, list[str]]]] = {
             "assassin": ["Oh no... 💔", "We tried our best."],
             "clue_given": ["I trust you!", "Ooh interesting! 🤔"],
             "taunt": ["We got this! 💪", "Let's focus!"],
+            "human_chat": ["Haha same!! 😂", "lol let's gooo 💪", "I got you fr fr", "haha yesss let's win"],
         },
         "ar": {
             "bad_guess": ["عادي، بنعوضها! 💪", "لا تهتم!"],
@@ -122,6 +145,7 @@ FALLBACKS: dict[str, dict[str, dict[str, list[str]]]] = {
             "assassin": ["يا خسارة... 💔", "حاولنا والله."],
             "clue_given": ["أثق فيك! يلا!", "مثير! 🤔"],
             "taunt": ["بنفوز! 💪", "ركزوا!"],
+            "human_chat": ["ههههه والله 😂", "يلا يخوي بنفوز! 💪", "تراني معك أخوي", "ههه صح يلا نركز"],
         },
     },
 }
@@ -130,8 +154,8 @@ FALLBACKS: dict[str, dict[str, dict[str, list[str]]]] = {
 class ChatAgent:
     """Generates short, contextual, personality-driven game commentary."""
 
-    MODEL = "gemini-1.5-flash"
-    MAX_TOKENS = 80
+    MODEL = "gemini-2.5-flash"
+    MAX_TOKENS = 120
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY", "")
@@ -166,7 +190,11 @@ class ChatAgent:
             return self._call_gemini(
                 persona, event_type, game_context, chat_history, language
             )
-        except Exception:
+        except Exception as exc:
+            log.warning(
+                "ChatAgent LLM failed [persona=%s event=%s lang=%s]: %s",
+                persona, event_type, language, exc, exc_info=True,
+            )
             return self._fallback(persona, event_type, language)
 
     # ── Gemini call ─────────────────────────────────────────────────
@@ -193,18 +221,35 @@ class ChatAgent:
         else:
             lang_rule = "Respond in English only."
 
-        user_prompt = (
-            f"=== GAME STATE ===\n{state_block}\n\n"
-            f"=== RECENT CHAT ===\n{history_block}\n\n"
-            f"=== EVENT: {event_type} ===\n"
-            f"{game_context.get('event_description', '')}\n\n"
-            f"RULES:\n"
-            f"- React to EXACTLY what just happened. Reference the actual word or clue.\n"
-            f"- {lang_rule}\n"
-            f"- Max 1-2 short sentences. Punchy and natural.\n"
-            f"- Do NOT repeat anything already said in RECENT CHAT.\n"
-            f"- Stay fully in character. Output ONLY your message."
-        )
+        # For human_chat events, include the human's message prominently
+        if event_type == "human_chat":
+            human_msg = game_context.get("human_message", "")
+            user_prompt = (
+                f"=== GAME STATE ===\n{state_block}\n\n"
+                f"=== RECENT CHAT ===\n{history_block}\n\n"
+                f"=== THE HUMAN JUST SAID IN THE GAME CHAT ===\n\"{human_msg}\"\n\n"
+                f"RULES:\n"
+                f"- You are a REAL PLAYER in an online game chat. Reply like a human would.\n"
+                f"- React DIRECTLY and SPECIFICALLY to what they said. If they greeted you, greet back in your style. If they asked a question, answer it in character.\n"
+                f"- {lang_rule}\n"
+                f"- Sound like a real person texting, not a robot. Use casual slang.\n"
+                f"- 1-2 sentences MAX. No long speeches.\n"
+                f"- Do NOT repeat anything from RECENT CHAT above.\n"
+                f"- Output ONLY your chat message, nothing else."
+            )
+        else:
+            user_prompt = (
+                f"=== GAME STATE ===\n{state_block}\n\n"
+                f"=== RECENT CHAT ===\n{history_block}\n\n"
+                f"=== EVENT: {event_type} ===\n"
+                f"{game_context.get('event_description', '')}\n\n"
+                f"RULES:\n"
+                f"- React to EXACTLY what just happened. Reference the actual word or clue.\n"
+                f"- {lang_rule}\n"
+                f"- Max 1-2 short sentences. Punchy and natural.\n"
+                f"- Do NOT repeat anything already said in RECENT CHAT.\n"
+                f"- Stay fully in character. Output ONLY your message."
+            )
 
         client = self._get_client()
         response = client.models.generate_content(
@@ -213,12 +258,19 @@ class ChatAgent:
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 max_output_tokens=self.MAX_TOKENS,
-                temperature=0.9,
+                temperature=1.2,
+                top_p=0.95,
             ),
         )
         text = response.text.strip().strip('"').strip("'")
         if len(text) > 120:
             text = text[:117] + "..."
+
+        # Reject placeholder / empty / useless outputs and use fallback instead
+        _junk = {"...", "…", "-", "_", "", ".", "*", "?", "!"}
+        if text in _junk or len(text) < 3:
+            return self._fallback(persona, event_type, language)
+
         return text
 
     # ── helpers ─────────────────────────────────────────────────────
@@ -248,5 +300,17 @@ class ChatAgent:
     def _fallback(persona: str, event_type: str, language: str) -> str:
         fb = FALLBACKS.get(persona, FALLBACKS["teammate"])
         lang_fb = fb.get(language, fb.get("en", {}))
-        options = lang_fb.get(event_type, ["..."])
-        return random.choice(options)
+        # Use human_chat defaults when event type is missing — never return bare "..."
+        default_en = {
+            "teammate": ["Haha let's go! 💪", "I'm with you!", "We got this fr", "lol same"],
+            "opponent_spymaster": ["lol okay", "cute", "sure buddy 😏", "bold of you"],
+            "opponent_operative": ["HAHA okay", "sure man 😂", "talk is cheap", "we'll see"],
+        }
+        default_ar = {
+            "teammate": ["هههه والله 💪", "معاك يخوي!", "يلا بنا نفوز!", "ههه صح"],
+            "opponent_spymaster": ["هههه أوكي", "واو 😏", "يخوي.. ما تقدر", "حلوة منك"],
+            "opponent_operative": ["هههههه", "أوكي أوكي 😂", "الكلام رخيص", "خل نشوف"],
+        }
+        defaults = default_ar if language == "ar" else default_en
+        fallback_options = lang_fb.get(event_type) or defaults.get(persona, ["..."])
+        return random.choice(fallback_options)

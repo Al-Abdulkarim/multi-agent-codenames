@@ -48,10 +48,18 @@ class GameManager:
         self.on_chat_callback = None
         self.on_state_callback = None
 
+        # Flag: suppress intermediate state callbacks during AI turns
+        # (the outer _run_ai_turns sends a final state_update instead)
+        self._ai_turn_in_progress: bool = False
+
         # Agent logs — list of {timestamp, agent, action, detail, reflection}
         self.chat_messages: list[dict] = []
         # Chat messages — list of {timestamp, agent, team, message}
         self.agent_logs: list[dict] = []
+        # Cooldown: prevent same persona from speaking twice in rapid succession
+        self._persona_cooldowns: dict[str, float] = {}
+        # Chat message ID counter for dedup
+        self._chat_id_counter: int = 0
 
     # ── logging helpers ─────────────────────────────────────────────
 
@@ -71,7 +79,9 @@ class GameManager:
         return entry
 
     def _add_chat(self, agent: str, team: str, message: str) -> dict:
+        self._chat_id_counter += 1
         entry = {
+            "id": self._chat_id_counter,
             "timestamp": time.time(),
             "agent": agent,
             "team": team,
@@ -126,13 +136,12 @@ class GameManager:
         """Apply trigger rules to decide who speaks.  Max 2 per event."""
         speakers: list[str] = []
         is_opponent = ctx.get("is_opponent_action", False)
+        actor = ctx.get("actor", "human")
 
         if event_type == "bad_guess":
             if is_opponent:
-                # Opponent guessed wrong → teammate reacts (relieved)
                 speakers.append("teammate")
             else:
-                # Human / teammate guessed wrong → 1 random opponent + teammate 35%
                 speakers.append(
                     random.choice(["opponent_spymaster", "opponent_operative"])
                 )
@@ -141,13 +150,11 @@ class GameManager:
 
         elif event_type == "good_guess":
             if is_opponent:
-                # Opponent guessed correct — low-key reaction
                 if random.random() < 0.3:
                     speakers.append(
                         random.choice(["opponent_spymaster", "opponent_operative"])
                     )
             else:
-                # Human / teammate guessed correct → teammate celebrates
                 speakers.append("teammate")
                 if random.random() < 0.25:
                     speakers.append(
@@ -156,20 +163,16 @@ class GameManager:
 
         elif event_type == "sweep":
             if is_opponent:
-                # Opponent swept all clue cards → up to 2 opponents
                 speakers.append("opponent_operative")
                 if random.random() < 0.6:
                     speakers.append("opponent_spymaster")
             else:
-                # Teammate swept → teammate celebrates
                 speakers.append("teammate")
 
         elif event_type == "assassin":
             if is_opponent:
-                # Opponent hit assassin → teammate celebrates
                 speakers.append("teammate")
             else:
-                # Human team hit assassin → opponent mocks + teammate reacts
                 speakers.append(
                     random.choice(["opponent_spymaster", "opponent_operative"])
                 )
@@ -187,6 +190,25 @@ class GameManager:
             speakers.append(
                 random.choice(["opponent_spymaster", "opponent_operative"])
             )
+
+        elif event_type == "human_chat":
+            # Always exactly one reply to a direct human message
+            speakers.append(
+                random.choice(["teammate", "opponent_spymaster", "opponent_operative"])
+            )
+
+        # ── filters ─────────────────────────────────────────────────────
+        # 1. Don't let the acting agent react to its own action
+        if actor == "ai_teammate":
+            speakers = [s for s in speakers if s != "teammate"]
+        # 2. Cooldown: skip personas that spoke in the last 3 seconds
+        #    EXCEPTION: human_chat always gets a reply regardless of cooldown
+        if event_type != "human_chat":
+            now = time.time()
+            speakers = [
+                s for s in speakers
+                if now - self._persona_cooldowns.get(s, 0) > 3.0
+            ]
 
         return speakers[:2]  # hard cap at 2 messages per event
 
@@ -224,6 +246,7 @@ class GameManager:
                 )
                 entry = self._add_chat(label, team, msg)
                 entries.append(entry)
+                self._persona_cooldowns[persona] = time.time()
             except Exception as e:
                 log.warning("Chat generation failed for %s: %s", persona, e)
 
@@ -347,7 +370,7 @@ class GameManager:
         s.current_phase = "guess"
         log.info("Clue recorded: '%s' for %d (%s)", clue, number, s.current_team.value)
 
-        if self.on_state_callback:
+        if self.on_state_callback and not self._ai_turn_in_progress:
             self.on_state_callback()
 
         return {"success": True, "clue": clue, "number": number}
@@ -402,7 +425,7 @@ class GameManager:
         if not correct or s.guesses_remaining <= 0:
             self._switch_turn()
 
-        if self.on_state_callback:
+        if self.on_state_callback and not self._ai_turn_in_progress:
             self.on_state_callback()
 
         return {
@@ -484,6 +507,7 @@ class GameManager:
                 "clue": clue.clue,
                 "number": clue.number,
                 "is_opponent_action": is_opponent,
+                "actor": "ai_opponent" if is_opponent else "ai_teammate",
                 "event_description": (
                     f"{'Opponent' if is_opponent else 'Teammate'} Spymaster "
                     f"gave clue '{clue.clue}' for {clue.number}"
@@ -581,6 +605,7 @@ class GameManager:
                         "word": guess.word,
                         "correct": False,
                         "is_opponent_action": is_opponent,
+                        "actor": "ai_opponent" if is_opponent else "ai_teammate",
                         "result": result.get("revealed", "wrong"),
                         "event_description": (
                             f"{'Opponent' if is_opponent else 'Teammate'} operative "
@@ -600,6 +625,7 @@ class GameManager:
                     "correct_count": correct_count,
                     "clue_number": clue_number,
                     "is_opponent_action": is_opponent,
+                    "actor": "ai_opponent" if is_opponent else "ai_teammate",
                     "event_description": (
                         f"{'Opponent' if is_opponent else 'Teammate'} operative "
                         f"nailed all {correct_count} words from the clue!"
@@ -613,6 +639,14 @@ class GameManager:
 
     def run_ai_turn(self) -> dict[str, Any]:
         """Run the appropriate AI action(s) for the current phase. Returns summary with chat and logs."""
+        self._ai_turn_in_progress = True
+        try:
+            return self._run_ai_turn_inner()
+        finally:
+            self._ai_turn_in_progress = False
+
+    def _run_ai_turn_inner(self) -> dict[str, Any]:
+        """Internal implementation — called with _ai_turn_in_progress=True."""
         s = self.state
         team = s.current_team.value
 
@@ -622,6 +656,7 @@ class GameManager:
                 "taunt",
                 {
                     "is_opponent_action": True,
+                    "actor": "ai_opponent",
                     "event_description": "Opponent's turn is starting.",
                 },
             )

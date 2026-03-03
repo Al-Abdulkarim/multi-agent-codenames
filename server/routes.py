@@ -23,6 +23,9 @@ ws_manager = ConnectionManager()
 # In-memory game store  (game_id -> GameManager)
 _games: dict[str, GameManager] = {}
 
+# Per-game lock to prevent concurrent AI turn tasks
+_ai_turn_tasks: dict[str, asyncio.Task] = {}
+
 
 # ── request bodies ──────────────────────────────────────────────────────
 
@@ -101,6 +104,7 @@ def _state_payload(mgr: GameManager) -> dict[str, Any]:
         "whose_turn": mgr.whose_turn(),
         "chat_messages": [
             {
+                "id": m.get("id", 0),
                 "sender": m["agent"].capitalize() if m["agent"] != "human" else "You",
                 "team": m["team"],
                 "message": m["message"],
@@ -114,27 +118,39 @@ def _state_payload(mgr: GameManager) -> dict[str, Any]:
 
 async def _run_ai_turns(game_id: str) -> None:
     """Run AI turns in background, broadcasting events via WebSocket."""
-    mgr = _get_game(game_id)
-    s = mgr.state
+    # Prevent a second concurrent task for the same game
+    existing = _ai_turn_tasks.get(game_id)
+    if existing and not existing.done():
+        log.debug("_run_ai_turns already active for %s — skipping duplicate", game_id)
+        return
 
-    while not s.game_over and not mgr.is_human_turn():
-        await ws_manager.broadcast(
-            game_id, "ai_thinking", {"team": s.current_team.value}
-        )
+    current_task = asyncio.current_task()
+    _ai_turn_tasks[game_id] = current_task
 
-        # Run the blocking AI turn off the event loop
-        turn_result = await asyncio.to_thread(mgr.run_ai_turn)
+    try:
+        mgr = _get_game(game_id)
+        s = mgr.state
 
-        await ws_manager.broadcast(game_id, "ai_turn_complete", turn_result)
-        await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
-
-        if s.game_over:
+        while not s.game_over and not mgr.is_human_turn():
             await ws_manager.broadcast(
-                game_id,
-                "game_over",
-                {"winner": s.winner.value if s.winner else None},
+                game_id, "ai_thinking", {"team": s.current_team.value}
             )
-            break
+
+            # Run the blocking AI turn off the event loop
+            turn_result = await asyncio.to_thread(mgr.run_ai_turn)
+
+            await ws_manager.broadcast(game_id, "ai_turn_complete", turn_result)
+            await ws_manager.broadcast(game_id, "state_update", _state_payload(mgr))
+
+            if s.game_over:
+                await ws_manager.broadcast(
+                    game_id,
+                    "game_over",
+                    {"winner": s.winner.value if s.winner else None},
+                )
+                break
+    finally:
+        _ai_turn_tasks.pop(game_id, None)
 
 
 # ── REST endpoints ──────────────────────────────────────────────────────
@@ -169,6 +185,7 @@ async def new_game(req: NewGameRequest):
         def handle_chat(chat):
             if getattr(mgr, "state", None):
                 payload = {
+                    "id": chat.get("id", 0),
                     "sender": (
                         chat["agent"].capitalize()
                         if chat["agent"] != "human"
@@ -244,6 +261,7 @@ async def submit_clue(game_id: str, req: ClueRequest):
                     "clue": req.clue,
                     "number": req.number,
                     "is_opponent_action": False,
+                    "actor": "human",
                     "event_description": f"Human Spymaster gave clue '{req.clue}' for {req.number}",
                 },
             )
@@ -286,6 +304,7 @@ async def submit_guess(game_id: str, req: GuessRequest):
                     "word": req.word,
                     "correct": result.get("correct"),
                     "is_opponent_action": False,
+                    "actor": "human",
                     "result": result.get("revealed", "unknown"),
                     "event_description": (
                         f"Human guessed '{req.word}' \u2014 "
@@ -330,10 +349,28 @@ async def handle_chat(game_id: str, req: ChatRequest):
     except ValueError as e:
         return {"error": str(e)}
 
-    # Add human message to chat
-    mgr._add_chat("human", mgr.state.human_team.value, req.message)
+    # Add human message to chat (suppress callback — client already rendered it)
+    saved_cb = mgr.on_chat_callback
+    mgr.on_chat_callback = None
+    entry = mgr._add_chat("human", mgr.state.human_team.value, req.message)
+    mgr.on_chat_callback = saved_cb
 
-    return {"success": True}
+    # Trigger exactly one AI agent to reply in the background
+    asyncio.create_task(
+        asyncio.to_thread(
+            mgr._emit_chat_reactions,
+            "human_chat",
+            {
+                "is_opponent_action": False,
+                "actor": "human",
+                "human_message": req.message,
+                "event_description": f"The human player said: \"{req.message}\"",
+            },
+        )
+    )
+
+    # Return the server-assigned ID so the client can dedup the message
+    return {"success": True, "id": entry["id"]}
 
 
 # ── WebSocket ───────────────────────────────────────────────────────────
