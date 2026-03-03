@@ -861,29 +861,6 @@ body.lang-ar .text-input {
   transition: all 0.4s ease;
 }
 
-/* Quit Button */
-.quit-btn {
-  padding: 6px 16px;
-  border-radius: 50px;
-  background: transparent;
-  border: 1px solid var(--red);
-  color: var(--red-light);
-  font-family: var(--font-body);
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition);
-  white-space: nowrap;
-}
-
-.quit-btn:hover {
-  background: var(--red);
-  color: #fff;
-}
-
-.quit-btn:active {
-  transform: scale(0.95);
-}
 
 .turn-indicator.red-turn {
   background: rgba(192, 57, 43, 0.15);
@@ -1664,7 +1641,17 @@ body.lang-ar .text-input {
 
 /* Post Game Actions – Enhanced */
 .post-game-actions {
-  display: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 0 4px;
+  animation: fadeInDown 0.3s ease;
+}
+
+.post-game-actions.hidden {
+  display: none !important;
 }
 
 @keyframes fadeInDown {

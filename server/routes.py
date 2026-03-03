@@ -8,6 +8,9 @@ import os
 from datetime import datetime
 from typing import Any
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
@@ -144,7 +147,7 @@ async def _run_ai_turns(game_id: str) -> None:
 async def new_game(req: NewGameRequest):
     api_key = req.api_key or os.getenv("GOOGLE_API_KEY", "")
     if not api_key:
-        return {"error": "No API key provided"}
+        raise HTTPException(status_code=400, detail="No API key provided. Set GOOGLE_API_KEY in your environment or pass api_key in the request.")
 
     config = BoardConfig(
         size=BoardSize(req.board_size),
