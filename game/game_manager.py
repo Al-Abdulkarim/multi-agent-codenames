@@ -94,9 +94,14 @@ class GameManager:
             "message": message,
             "speaker_key": speaker_key,
         }
-        self.chat_messages.append(entry)
+        # Run callback (TTS + WebSocket broadcast) BEFORE appending so that
+        # the entry is not visible to state-polling until audio is attached.
         if self.on_chat_callback:
-            self.on_chat_callback(entry)
+            try:
+                self.on_chat_callback(entry)
+            except Exception:
+                log.warning("Chat callback failed", exc_info=True)
+        self.chat_messages.append(entry)
         return entry
 
     def _build_game_context(self, extra: dict | None = None) -> dict:
