@@ -707,11 +707,14 @@ function renderBoard(state) {
 
     // Build classes
     let classes = ['card-inner'];
-    if (card.revealed || boardRevealed) {
+    if (card.revealed) {
       classes.push('revealed', `type-${card.type}`);
       // Remove spinner if revealed
       const spinner = el.querySelector('.guess-spinner');
       if (spinner) spinner.remove();
+    } else if (boardRevealed) {
+      // Post-game reveal: show colored borders only (not full background)
+      classes.push('unrevealed', `spy-${card.type}`, 'spymaster-view', 'disabled');
     } else {
       classes.push('unrevealed');
       if (isSpymaster) {

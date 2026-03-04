@@ -1000,9 +1000,9 @@ body.lang-ar .text-input {
   transform-style: preserve-3d;
 }
 
-/* Unrevealed - All white with colored borders */
+/* Unrevealed - Cream/beige background */
 .card-inner.unrevealed {
-  background: #ffffff;
+  background: #f5f0e8;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   border: 3px solid #cccccc;
 }
@@ -1088,15 +1088,15 @@ body.lang-ar .text-input {
 }
 
 .card-inner.revealed.type-neutral {
-  background: var(--neutral-bg);
-  border-color: rgba(0, 0, 0, 0.2);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 16px rgba(149, 165, 166, 0.4);
+  background: #ffffff;
+  border: 5px solid #a89030;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), 0 0 14px rgba(168, 144, 48, 0.5);
 }
 
 .card-inner.revealed.type-assassin {
   background: var(--assassin);
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 16px rgba(192, 57, 43, 0.5);
+  border: 5px solid #1a252f;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* Spymaster view - colored borders + white background */
@@ -1119,9 +1119,9 @@ body.lang-ar .text-input {
 }
 
 .card-inner.spy-assassin {
-  border: 5px solid #000;
-  background: #ffffff;
-  box-shadow: 0 0 0 1px #000, 0 2px 8px rgba(0, 0, 0, 0.3);
+  border: 5px solid #1a252f;
+  background: var(--assassin);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* Spymaster view - colored borders + white background */
@@ -1144,16 +1144,19 @@ body.lang-ar .text-input {
 }
 
 .card-inner.spymaster-view.spy-assassin {
-  background: #ffffff !important;
-  border: 5px solid #000 !important;
-  box-shadow: 0 0 0 1px #000, 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  background: var(--assassin) !important;
+  border: 5px solid #1a252f !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
 }
 
 .card-inner.spymaster-view.spy-red .card-word,
 .card-inner.spymaster-view.spy-blue .card-word,
-.card-inner.spymaster-view.spy-neutral .card-word,
-.card-inner.spymaster-view.spy-assassin .card-word {
+.card-inner.spymaster-view.spy-neutral .card-word {
   color: var(--text-dark) !important;
+}
+
+.card-inner.spymaster-view.spy-assassin .card-word {
+  color: #fff !important;
 }
 
 /* Card word */
@@ -1183,6 +1186,10 @@ body.lang-ar .text-input {
 
 .card-inner.revealed.type-neutral .card-word {
   color: var(--text-dark);
+}
+
+.card-inner.revealed.type-assassin .card-word {
+  color: #fff;
 }
 
 /* Skull on assassin */
