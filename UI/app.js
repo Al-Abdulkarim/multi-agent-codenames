@@ -7,7 +7,7 @@
 
 // ─── Configuration ───────────────────────────────────
 const API_BASE = '';
-const POLL_INTERVAL = 5000;
+const POLL_INTERVAL = 1000;
 
 // ─── Sounds ──────────────────────────────────────────
 const sounds = {
@@ -611,8 +611,6 @@ function updateTurnIndicator(state) {
   }
 }
 
-// ─── Clue Display ────────────────────────────────────
-
 function updateClue(state) {
   const clue = state.clue;
   const isMyTurn = state.current_turn === config.team;
@@ -620,12 +618,20 @@ function updateClue(state) {
   const isSpymaster = config.role === 'spymaster';
 
   $clueBanner.classList.add('hidden');
+  $clueBanner.classList.remove('red-team', 'blue-team');
   $clueStatus.classList.add('hidden');
 
   const dict = TRANSLATIONS[config.language] || TRANSLATIONS.en;
 
   if (clue && clue.word) {
+    // Show clue always for everyone - spymaster sees both teams' clues in real-time
     $clueBanner.classList.remove('hidden');
+    // Add team color based on whose turn it is
+    if (state.current_turn === 'red') {
+      $clueBanner.classList.add('red-team');
+    } else if (state.current_turn === 'blue') {
+      $clueBanner.classList.add('blue-team');
+    }
     $clueWord.textContent = clue.word;
     $clueNumber.textContent = clue.number;
   } else if (isMyTurn && isOperative) {
@@ -1206,7 +1212,21 @@ function reconnectWebSocket(id) {
 // ─── Polling Fallback ────────────────────────────────
 
 function startPolling() {
-  // Polling disabled to prevent UI refresh flicker/AI thinking spam
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    if (!gameId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/game/${gameId}/state`);
+      if (!res.ok) return;
+      const state = await res.json();
+      if (state && state.game_id === gameId) {
+        gameState = state;
+        renderFullState(state);
+      }
+    } catch (err) {
+      console.error('Polling error:', err);
+    }
+  }, POLL_INTERVAL);
 }
 
 // ─── Game Over ───────────────────────────────────────
