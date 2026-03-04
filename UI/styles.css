@@ -1000,10 +1000,42 @@ body.lang-ar .text-input {
   transform-style: preserve-3d;
 }
 
-/* Unrevealed */
+/* Unrevealed - Cream/beige background */
 .card-inner.unrevealed {
-  background: var(--card-bg);
+  background: #f5f0e8;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 3px solid #cccccc;
+}
+
+/* Unrevealed card type borders */
+.card-inner.unrevealed.spy-red,
+.card-inner.spy-red {
+  border-color: var(--red);
+}
+
+.card-inner.unrevealed.spy-blue,
+.card-inner.spy-blue {
+  border-color: var(--blue);
+}
+
+.card-inner.unrevealed.spy-neutral,
+.card-inner.spy-neutral {
+  border-color: var(--neutral-color);
+}
+
+.card-inner.unrevealed.spy-assassin,
+.card-inner.spy-assassin {
+  border-color: #000;
+  animation: waveAssassin 2s ease-in-out infinite;
+}
+
+@keyframes waveAssassin {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4), inset 0 0 10px rgba(0, 0, 0, 0.1);
+  }
 }
 
 .card-inner.unrevealed::before {
@@ -1035,63 +1067,94 @@ body.lang-ar .text-input {
 /* Revealed */
 .card-inner.revealed {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  position: relative;
+}
+
+.card-inner.revealed::after {
+  display: none;
 }
 
 .card-inner.revealed.type-red {
   background: var(--red);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 16px rgba(192, 57, 43, 0.6);
 }
 
 .card-inner.revealed.type-blue {
   background: var(--blue);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 16px rgba(41, 128, 185, 0.6);
 }
 
 .card-inner.revealed.type-neutral {
-  background: var(--neutral-bg);
+  background: #ffffff;
+  border: 5px solid #a89030;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), 0 0 14px rgba(168, 144, 48, 0.5);
 }
 
 .card-inner.revealed.type-assassin {
   background: var(--assassin);
+  border: 5px solid #1a252f;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* Spymaster tints on unrevealed */
+/* Spymaster view - colored borders + white background */
 .card-inner.spy-red {
-  border: 2px solid var(--red);
-  background: linear-gradient(135deg, var(--card-bg), rgba(192, 57, 43, 0.15));
+  border: 5px solid var(--red);
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--red), 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .card-inner.spy-blue {
-  border: 2px solid var(--blue);
-  background: linear-gradient(135deg, var(--card-bg), rgba(41, 128, 185, 0.15));
+  border: 5px solid var(--blue);
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--blue), 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .card-inner.spy-neutral {
-  border: 2px solid var(--neutral-color);
-  background: linear-gradient(135deg, var(--card-bg), rgba(149, 165, 166, 0.15));
+  border: 5px solid var(--neutral-color);
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--neutral-color), 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .card-inner.spy-assassin {
-  border: 2px solid var(--assassin);
-  background: linear-gradient(135deg, var(--card-bg), rgba(44, 62, 80, 0.25));
+  border: 5px solid #1a252f;
+  background: var(--assassin);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* Spymaster Full Background Styles (Requested) */
+/* Spymaster view - colored borders + white background */
 .card-inner.spymaster-view.spy-red {
-  background: var(--red) !important;
-  border-color: var(--red);
+  background: #ffffff !important;
+  border: 5px solid var(--red) !important;
+  box-shadow: 0 0 0 1px var(--red), 0 2px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
 .card-inner.spymaster-view.spy-blue {
-  background: var(--blue) !important;
-  border-color: var(--blue);
+  background: #ffffff !important;
+  border: 5px solid var(--blue) !important;
+  box-shadow: 0 0 0 1px var(--blue), 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+
+.card-inner.spymaster-view.spy-neutral {
+  background: #ffffff !important;
+  border: 5px solid var(--neutral-color) !important;
+  box-shadow: 0 0 0 1px var(--neutral-color), 0 2px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
 .card-inner.spymaster-view.spy-assassin {
   background: var(--assassin) !important;
-  border-color: var(--assassin);
+  border: 5px solid #1a252f !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
 }
 
 .card-inner.spymaster-view.spy-red .card-word,
 .card-inner.spymaster-view.spy-blue .card-word,
+.card-inner.spymaster-view.spy-neutral .card-word {
+  color: var(--text-dark) !important;
+}
+
 .card-inner.spymaster-view.spy-assassin .card-word {
   color: #fff !important;
 }
@@ -1125,13 +1188,21 @@ body.lang-ar .text-input {
   color: var(--text-dark);
 }
 
+.card-inner.revealed.type-assassin .card-word {
+  color: #fff;
+}
+
 /* Skull on assassin */
 .card-skull {
   position: absolute;
   bottom: 4px;
   right: 6px;
-  font-size: 0.85rem;
+  font-size: 1.2rem;
   z-index: 2;
+}
+
+.card-inner.spy-assassin .card-skull {
+  display: block;
 }
 
 /* Card flip animation */
