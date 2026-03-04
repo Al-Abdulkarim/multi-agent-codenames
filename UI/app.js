@@ -952,6 +952,19 @@ function renderChat(messages) {
     return;
   }
 
+  // Retrofit audio buttons for already-rendered messages that now have audio
+  messages.forEach(m => {
+    if (!m.id || !renderedChatIds.has(m.id)) return;
+    const audioInfo = m.audio && m.audio.available ? m.audio : null;
+    if (!audioInfo || !audioInfo.url) return;
+    const existing = $chatMessages.querySelector(`[data-msg-id="${m.id}"]`);
+    if (existing && !existing.querySelector('.chat-audio-btn')) {
+      const isHuman = m.sender === 'You' || m.sender === 'Human';
+      const timeEl = existing.querySelector('.chat-time');
+      existing.insertBefore(createAudioBtn(audioInfo, isHuman), timeEl);
+    }
+  });
+
   // Only render messages we haven't seen yet (by server ID or content fingerprint)
   const newMessages = messages.filter(m => {
     if (m.id && renderedChatIds.has(m.id)) return false;
@@ -967,6 +980,25 @@ function renderChat(messages) {
     });
     scrollChatIfNeeded();
   }
+}
+
+function createAudioBtn(audioInfo, isHuman) {
+  const playBtn = document.createElement('button');
+  playBtn.type = 'button';
+  playBtn.className = 'chat-audio-btn';
+  playBtn.textContent = config.language === 'ar' ? 'تشغيل الصوت' : 'Play Audio';
+  playBtn.addEventListener('click', () => {
+    playChatAudio(audioInfo.url).catch(() => {
+      showToast(config.language === 'ar' ? 'تعذّر تشغيل الصوت' : 'Audio playback failed', 'error');
+    });
+  });
+
+  const shouldAutoPlay = Boolean(audioInfo.autoplay) && !isHuman;
+  if (shouldAutoPlay) {
+    playChatAudio(audioInfo.url).catch(() => {});
+  }
+
+  return playBtn;
 }
 
 function appendChatBubble(msg) {
@@ -995,28 +1027,14 @@ function appendChatBubble(msg) {
   time.className = 'chat-time';
   time.textContent = formatTime(msg.timestamp);
 
+  if (msg.id) div.dataset.msgId = msg.id;
+
   div.appendChild(sender);
   div.appendChild(bubble);
 
   const audioInfo = msg.audio && msg.audio.available ? msg.audio : null;
   if (audioInfo && audioInfo.url) {
-    const playBtn = document.createElement('button');
-    playBtn.type = 'button';
-    playBtn.className = 'chat-audio-btn';
-    playBtn.textContent = config.language === 'ar' ? 'تشغيل الصوت' : 'Play Audio';
-    playBtn.addEventListener('click', () => {
-      playChatAudio(audioInfo.url).catch(() => {
-        showToast(config.language === 'ar' ? 'تعذّر تشغيل الصوت' : 'Audio playback failed', 'error');
-      });
-    });
-    div.appendChild(playBtn);
-
-    const shouldAutoPlay = Boolean(audioInfo.autoplay) && !isHuman;
-    if (shouldAutoPlay) {
-      playChatAudio(audioInfo.url).catch(() => {
-        // Browser autoplay policy may block playback. Manual button remains available.
-      });
-    }
+    div.appendChild(createAudioBtn(audioInfo, isHuman));
   }
 
   div.appendChild(time);
@@ -1033,7 +1051,19 @@ function getChatFingerprint(msg) {
 function addChatMessage(msg) {
   // Primary dedup: by server-assigned ID
   if (msg.id) {
-    if (renderedChatIds.has(msg.id)) return;
+    if (renderedChatIds.has(msg.id)) {
+      // Already rendered — but if this message now carries audio, retrofit the button
+      const audioInfo = msg.audio && msg.audio.available ? msg.audio : null;
+      if (audioInfo && audioInfo.url) {
+        const existing = $chatMessages.querySelector(`[data-msg-id="${msg.id}"]`);
+        if (existing && !existing.querySelector('.chat-audio-btn')) {
+          const isHuman = msg.sender === 'You' || msg.sender === 'Human';
+          const timeEl = existing.querySelector('.chat-time');
+          existing.insertBefore(createAudioBtn(audioInfo, isHuman), timeEl);
+        }
+      }
+      return;
+    }
     renderedChatIds.add(msg.id);
   }
   // Secondary dedup: by content fingerprint (catches messages without stable IDs)
