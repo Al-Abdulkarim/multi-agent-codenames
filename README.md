@@ -63,7 +63,7 @@ Notes:
 - Request payload sent to TTS server is:
   `{"text": "...", "voice": "...", "exaggeration": 0.5, "temperature": 0.8, "seed": 0, "cfgw": 0.5}`
 - Endpoint used is exactly `POST TTS_ENDPOINT_URL`.
-
+ 
 ---
 
 ## 🎯 Game Rules
