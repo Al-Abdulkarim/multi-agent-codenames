@@ -14,7 +14,7 @@ venv/
 # Generated / media
 *.wav
 *.mp3
-storage/tts/
+
 
 # Logs & output
 *.log
