@@ -16,15 +16,32 @@ const sounds = {
   // Short Success Chime for winning
   win: new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'),
   // Subtle error blub
-  error: new Audio('https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3')
+  error: new Audio('https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3'),
+  // Correct guess - own team card (short pop)
+  correct: new Audio('https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3'),
+  // Wrong guess - opponent card (short buzz)
+  opponent: new Audio('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3'),
+  // Neutral card (soft click)
+  neutral: new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'),
+  // Loss / defeat
+  lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2028/2028-preview.mp3')
 };
 let currentChatAudio = null;
 
+// Preload all sounds
+Object.values(sounds).forEach(audio => { audio.preload = 'auto'; audio.load(); });
+
+let playedEndSound = false;
+
 function playSound(name) {
-  if (sounds[name]) {
-    sounds[name].currentTime = 0;
-    sounds[name].play().catch(e => console.log('Sound blocked:', e));
+  if (!sounds[name]) return;
+  // Win/lose only play once per game
+  if (name === 'win' || name === 'lose') {
+    if (playedEndSound) return;
+    playedEndSound = true;
   }
+  sounds[name].currentTime = 0;
+  sounds[name].play().catch(e => console.log('Sound blocked:', e));
 }
 
 function resolveAudioUrl(url) {
@@ -339,6 +356,7 @@ function showSetupScreen() {
   gameState = null;
   guessCount = 0;
   boardRevealed = false;
+  playedEndSound = false;
   renderedChatIds = new Set();
   renderedChatFingerprints = new Set();
   renderedLogsCount = 0;
@@ -822,6 +840,7 @@ async function handleQuickRestart() {
 
     // Reset state
     boardRevealed = false;
+    playedEndSound = false;
     isPollingPaused = false;
     guessCount = 0;
     lastClueWord = null;
@@ -867,11 +886,19 @@ async function handleCardClick(word, cardEl) {
     guessCount++;
     playSound('flip');
 
-    // Find the guessed card to see its type
+    // Find the guessed card to see its type and play sound
     const guessedCard = data.board.find(c => c.word === word);
-    if (guessedCard && guessedCard.type === 'assassin') {
-      document.body.classList.add('assassin-flash');
-      setTimeout(() => document.body.classList.remove('assassin-flash'), 500);
+    if (guessedCard) {
+      if (guessedCard.type === 'assassin') {
+        document.body.classList.add('assassin-flash');
+        setTimeout(() => document.body.classList.remove('assassin-flash'), 500);
+      } else if (guessedCard.type === config.team) {
+        playSound('correct');
+      } else if (guessedCard.type === 'neutral') {
+        playSound('neutral');
+      } else {
+        playSound('opponent');
+      }
     }
 
     // Wait for flip animation to complete then re-render
@@ -1326,6 +1353,7 @@ function showGameOver(state) {
       }
       document.body.classList.add('assassin-flash');
       setTimeout(() => document.body.classList.remove('assassin-flash'), 600);
+      playSound('lose');
     }
   } else {
     // Normal win/loss (all cards revealed)
@@ -1351,6 +1379,7 @@ function showGameOver(state) {
         $gameOverTitle.textContent = 'DEFEAT 💔';
         $gameOverSubtitle.textContent = 'The opponent found all their agents first.';
       }
+      playSound('lose');
     }
   }
 }
