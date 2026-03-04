@@ -143,6 +143,19 @@ After a team's turn ends, it becomes the other team's turn, starting with their 
 
 ---
 
+## Text-to-Speech (TTS)
+
+Every AI chat message is spoken aloud in addition to appearing as text in the chat panel.
+
+- **Who speaks**: only AI agents speak — the three chat personas (Opponent Spymaster, Opponent Operative, Teammate). Human messages are never read aloud.
+- **Distinct voices**: each persona has its own assigned voice so they sound clearly different from each other
+- **How it works**: when an AI chat message is generated, the server sends the text to an external TTS endpoint, which returns a WAV audio file. The file is served to the browser and plays automatically.
+- **Language support**: voices work for both English and Arabic messages; the audio naturally follows whichever language the game is set to
+- **Optional**: if no TTS endpoint is configured, the feature disables itself gracefully and chat remains text-only
+- **Audio storage**: generated WAV files are saved on the server temporarily. Old files are cleaned up automatically based on a configurable retention period and maximum file count.
+
+---
+
 ## Information Flow Between Agents
 
 ```
