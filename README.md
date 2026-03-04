@@ -40,6 +40,32 @@ Then open your browser and navigate to **http://localhost:8000**.
 
 ---
 
+## 🔊 Chat TTS Configuration
+
+The server can convert AI chat messages to `.wav` audio using an external TTS API and save files on disk for replay.
+
+Set these environment variables in your `.env`:
+
+```env
+TTS_ENDPOINT_URL=https://your-tts-server.example.com/tts
+TTS_TIMEOUT_SECONDS=10
+TTS_PERSIST_DIR=storage/tts
+TTS_SERVE_BASE_PATH=/media/tts
+TTS_RETENTION_DAYS=7
+TTS_MAX_FILES=5000
+```
+
+Notes:
+- Audio files are persisted under `TTS_PERSIST_DIR`.
+- Playback URLs are exposed by FastAPI under `TTS_SERVE_BASE_PATH`.
+- Cleanup keeps storage bounded via age (`TTS_RETENTION_DAYS`) and count (`TTS_MAX_FILES`).
+- If TTS fails, chat text still works normally.
+- Request payload sent to TTS server is:
+  `{"text": "...", "voice": "...", "exaggeration": 0.5, "temperature": 0.8, "seed": 0, "cfgw": 0.5}`
+- Endpoint used is exactly `POST TTS_ENDPOINT_URL`.
+
+---
+
 ## 🎯 Game Rules
 
 1. A board of **word cards** is laid out (15, 25, or 35 cards).

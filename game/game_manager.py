@@ -78,7 +78,13 @@ class GameManager:
             self.on_log_callback(entry)
         return entry
 
-    def _add_chat(self, agent: str, team: str, message: str) -> dict:
+    def _add_chat(
+        self,
+        agent: str,
+        team: str,
+        message: str,
+        speaker_key: str | None = None,
+    ) -> dict:
         self._chat_id_counter += 1
         entry = {
             "id": self._chat_id_counter,
@@ -86,6 +92,7 @@ class GameManager:
             "agent": agent,
             "team": team,
             "message": message,
+            "speaker_key": speaker_key,
         }
         self.chat_messages.append(entry)
         if self.on_chat_callback:
@@ -244,7 +251,7 @@ class GameManager:
                     chat_history=self.chat_messages[-6:],
                     language=lang,
                 )
-                entry = self._add_chat(label, team, msg)
+                entry = self._add_chat(label, team, msg, speaker_key=persona)
                 entries.append(entry)
                 self._persona_cooldowns[persona] = time.time()
             except Exception as e:

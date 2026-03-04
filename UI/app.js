@@ -18,12 +18,32 @@ const sounds = {
   // Subtle error blub
   error: new Audio('https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3')
 };
+let currentChatAudio = null;
 
 function playSound(name) {
   if (sounds[name]) {
     sounds[name].currentTime = 0;
     sounds[name].play().catch(e => console.log('Sound blocked:', e));
   }
+}
+
+function resolveAudioUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${API_BASE}${url}`;
+}
+
+function playChatAudio(url) {
+  const src = resolveAudioUrl(url);
+  if (!src) return Promise.reject(new Error('Missing audio URL'));
+
+  if (currentChatAudio) {
+    currentChatAudio.pause();
+    currentChatAudio = null;
+  }
+  const audio = new Audio(src);
+  currentChatAudio = audio;
+  return audio.play();
 }
 
 // ─── State ───────────────────────────────────────────
@@ -977,6 +997,28 @@ function appendChatBubble(msg) {
 
   div.appendChild(sender);
   div.appendChild(bubble);
+
+  const audioInfo = msg.audio && msg.audio.available ? msg.audio : null;
+  if (audioInfo && audioInfo.url) {
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'chat-audio-btn';
+    playBtn.textContent = config.language === 'ar' ? 'تشغيل الصوت' : 'Play Audio';
+    playBtn.addEventListener('click', () => {
+      playChatAudio(audioInfo.url).catch(() => {
+        showToast(config.language === 'ar' ? 'تعذّر تشغيل الصوت' : 'Audio playback failed', 'error');
+      });
+    });
+    div.appendChild(playBtn);
+
+    const shouldAutoPlay = Boolean(audioInfo.autoplay) && !isHuman;
+    if (shouldAutoPlay) {
+      playChatAudio(audioInfo.url).catch(() => {
+        // Browser autoplay policy may block playback. Manual button remains available.
+      });
+    }
+  }
+
   div.appendChild(time);
   $chatMessages.appendChild(div);
 }

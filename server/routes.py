@@ -18,10 +18,13 @@ from models.enums import BoardSize, Difficulty, Language, TeamColor, PlayerRole
 from models.card import BoardConfig
 from game.game_manager import GameManager
 from server.ws_manager import ConnectionManager
+from server.tts_service import TTSService
+from config import settings
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 ws_manager = ConnectionManager()
+tts_service = TTSService(settings.tts)
 
 # In-memory game store  (game_id -> GameManager)
 _games: dict[str, GameManager] = {}
@@ -112,6 +115,8 @@ def _state_payload(mgr: GameManager) -> dict[str, Any]:
                 "team": m["team"],
                 "message": m["message"],
                 "timestamp": datetime.fromtimestamp(m["timestamp"]).isoformat(),
+                "speaker_key": m.get("speaker_key"),
+                "audio": m.get("audio"),
             }
             for m in mgr.chat_messages
         ],
@@ -187,6 +192,16 @@ async def new_game(req: NewGameRequest):
 
         def handle_chat(chat):
             if getattr(mgr, "state", None):
+                if chat.get("speaker_key") != "human":
+                    voice_name = tts_service.resolve_voice(chat.get("speaker_key"))
+                    audio = tts_service.synthesize_to_file(
+                        chat.get("message", ""),
+                        voice_name=voice_name,
+                        message_id=chat.get("id"),
+                    )
+                    if audio:
+                        audio["autoplay"] = True
+                        chat["audio"] = audio
                 payload = {
                     "id": chat.get("id", 0),
                     "sender": (
@@ -197,6 +212,8 @@ async def new_game(req: NewGameRequest):
                     "team": chat["team"],
                     "message": chat["message"],
                     "timestamp": datetime.fromtimestamp(chat["timestamp"]).isoformat(),
+                    "speaker_key": chat.get("speaker_key"),
+                    "audio": chat.get("audio"),
                 }
                 asyncio.run_coroutine_threadsafe(
                     ws_manager.broadcast(mgr.state.game_id, "chat_message", payload),
@@ -355,7 +372,7 @@ async def handle_chat(game_id: str, req: ChatRequest):
     # Add human message to chat (suppress callback — client already rendered it)
     saved_cb = mgr.on_chat_callback
     mgr.on_chat_callback = None
-    entry = mgr._add_chat("human", mgr.state.human_team.value, req.message)
+    entry = mgr._add_chat("human", mgr.state.human_team.value, req.message, speaker_key="human")
     mgr.on_chat_callback = saved_cb
 
     # Trigger exactly one AI agent to reply in the background
