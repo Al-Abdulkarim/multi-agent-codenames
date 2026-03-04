@@ -1381,6 +1381,21 @@ body.lang-ar .text-input {
   margin-top: 4px;
 }
 
+.chat-audio-btn {
+  margin-top: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg-alt);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.chat-audio-btn:hover {
+  filter: brightness(0.98);
+}
+
 @keyframes chatSlideIn {
   from {
     opacity: 0;

@@ -31,6 +31,16 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class EnvConfig:
     """Environment-backed settings.
@@ -117,6 +127,26 @@ class AgentDefaults:
 
 
 @dataclass(frozen=True)
+class TTSConfig:
+    """Minimal TTS settings.
+
+    Only the request endpoint is expected from environment variables.
+    Other request parameters are fixed in code to keep setup simple.
+    """
+
+    endpoint_url: str = field(default_factory=lambda: _env_str("TTS_ENDPOINT_URL", ""))
+    timeout_seconds: float = field(
+        default_factory=lambda: _env_float("TTS_TIMEOUT_SECONDS", 10.0)
+    )
+    persist_dir: str = field(default_factory=lambda: _env_str("TTS_PERSIST_DIR", "storage/tts"))
+    serve_base_path: str = field(
+        default_factory=lambda: _env_str("TTS_SERVE_BASE_PATH", "/media/tts")
+    )
+    retention_days: int = field(default_factory=lambda: _env_int("TTS_RETENTION_DAYS", 7))
+    max_files: int = field(default_factory=lambda: _env_int("TTS_MAX_FILES", 5000))
+
+
+@dataclass(frozen=True)
 class AppSettings:
     """Composed central settings object for future incremental adoption."""
 
@@ -125,6 +155,7 @@ class AppSettings:
     cli: CliDefaults = field(default_factory=CliDefaults)
     board: BoardDefaults = field(default_factory=BoardDefaults)
     agents: AgentDefaults = field(default_factory=AgentDefaults)
+    tts: TTSConfig = field(default_factory=TTSConfig)
 
 
 def build_settings() -> AppSettings:
