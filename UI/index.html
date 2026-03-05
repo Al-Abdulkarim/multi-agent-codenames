@@ -564,19 +564,6 @@
       <!-- RIGHT PANEL: Chat -->
       <aside id="chat-panel" class="side-panel chat-panel">
         <div class="panel-header">
-          <h2 class="panel-title">
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2">
-              <path
-                d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <span data-i18n="game_chat">Game Chat</span>
-          </h2>
           <button
             class="panel-toggle"
             data-panel="chat"
@@ -588,8 +575,19 @@
               fill="none"
               stroke="currentColor"
               stroke-width="2">
-              <path
-                d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+          <button
+            id="tts-mute-btn"
+            class="tts-mute-btn"
+            aria-label="Mute TTS"
+            title="Mute chat audio">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
             </svg>
           </button>
         </div>

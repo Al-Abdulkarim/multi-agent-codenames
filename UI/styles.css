@@ -1452,6 +1452,44 @@ body.lang-ar .text-input {
   margin-top: 4px;
 }
 
+/* TTS mute toggle */
+.tts-mute-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--panel-border);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, background 0.2s;
+}
+
+.tts-mute-btn:hover {
+  background: var(--panel-bg-alt);
+}
+
+.tts-mute-btn.muted {
+  color: var(--red-team);
+  position: relative;
+}
+
+.tts-mute-btn.muted svg path:last-child,
+.tts-mute-btn.muted svg path:nth-child(2) {
+  display: none;
+}
+
+.tts-mute-btn.muted::after {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 70%;
+  background: var(--red-team);
+  transform: rotate(45deg);
+}
+
 .chat-audio-btn {
   margin-top: 6px;
   border: 1px solid var(--panel-border);
