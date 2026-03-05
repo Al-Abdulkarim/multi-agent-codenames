@@ -221,14 +221,33 @@ class ChatAgent:
         else:
             lang_rule = "Respond in English only."
 
+        # ── Derive explicit team identity for the persona ──────────
+        human_team = game_context.get("human_team", "unknown")
+        is_opponent_persona = persona.startswith("opponent")
+        if is_opponent_persona:
+            persona_team = "blue" if human_team == "red" else "red"
+        else:
+            persona_team = human_team
+        relationship = "AGAINST" if is_opponent_persona else "WITH"
+
+        identity_block = (
+            f"=== YOUR IDENTITY ===\n"
+            f"You are: {persona.replace('_', ' ').title()}\n"
+            f"Your team: {persona_team.upper()}\n"
+            f"Human player's team: {human_team.upper()}\n"
+            f"Relationship: You are playing {relationship} the human.\n"
+        )
+
         # For human_chat events, include the human's message prominently
         if event_type == "human_chat":
             human_msg = game_context.get("human_message", "")
             user_prompt = (
+                f"{identity_block}\n"
                 f"=== GAME STATE ===\n{state_block}\n\n"
                 f"=== RECENT CHAT ===\n{history_block}\n\n"
                 f"=== THE HUMAN JUST SAID IN THE GAME CHAT ===\n\"{human_msg}\"\n\n"
                 f"RULES:\n"
+                f"- IMPORTANT: You are on the {persona_team.upper()} team, playing {relationship} the human ({human_team.upper()} team). Stay on YOUR side!\n"
                 f"- You are a REAL PLAYER in an online game chat. Reply like a human would.\n"
                 f"- React DIRECTLY and SPECIFICALLY to what they said. If they greeted you, greet back in your style. If they asked a question, answer it in character.\n"
                 f"- {lang_rule}\n"
@@ -239,11 +258,13 @@ class ChatAgent:
             )
         else:
             user_prompt = (
+                f"{identity_block}\n"
                 f"=== GAME STATE ===\n{state_block}\n\n"
                 f"=== RECENT CHAT ===\n{history_block}\n\n"
                 f"=== EVENT: {event_type} ===\n"
                 f"{game_context.get('event_description', '')}\n\n"
                 f"RULES:\n"
+                f"- IMPORTANT: You are on the {persona_team.upper()} team, playing {relationship} the human ({human_team.upper()} team). React accordingly!\n"
                 f"- React to EXACTLY what just happened. Reference the actual word or clue.\n"
                 f"- {lang_rule}\n"
                 f"- Max 1-2 short sentences. Punchy and natural.\n"
