@@ -27,6 +27,16 @@ class GameMetrics:
     assassin_hit: bool = False
     duration_seconds: float = 0.0
     clues: list[dict] = field(default_factory=list)
+    # Component-level: Operative
+    total_guesses: int = 0
+    correct_guesses: int = 0
+    wrong_team_guesses: int = 0
+    neutral_guesses: int = 0
+    assassin_guesses: int = 0
+    # Component-level: Spymaster
+    total_clues: int = 0
+    clues_fully_guessed: int = 0
+    clue_errors: int = 0
 
 
 @dataclass
@@ -38,6 +48,17 @@ class EvalReport:
     avg_duration: float = 0.0
     assassin_hits: int = 0
     games: list[GameMetrics] = field(default_factory=list)
+    # Aggregated Component-level
+    operative_accuracy: float = 0.0
+    total_guesses: int = 0
+    total_correct_guesses: int = 0
+    total_wrong_team: int = 0
+    total_neutral: int = 0
+    total_assassin_guesses: int = 0
+    spymaster_success_rate: float = 0.0
+    total_clues: int = 0
+    total_clues_fully_guessed: int = 0
+    total_clue_errors: int = 0
 
 
 class Evaluator:
@@ -85,6 +106,22 @@ class Evaluator:
         report.avg_turns = sum(all_turns) / len(all_turns) if all_turns else 0
         report.avg_duration = sum(all_durations) / len(all_durations) if all_durations else 0
 
+        # Aggregate component-level metrics across all games
+        for g in report.games:
+            report.total_guesses += g.total_guesses
+            report.total_correct_guesses += g.correct_guesses
+            report.total_wrong_team += g.wrong_team_guesses
+            report.total_neutral += g.neutral_guesses
+            report.total_assassin_guesses += g.assassin_guesses
+            report.total_clues += g.total_clues
+            report.total_clues_fully_guessed += g.clues_fully_guessed
+            report.total_clue_errors += g.clue_errors
+
+        if report.total_guesses > 0:
+            report.operative_accuracy = round(report.total_correct_guesses / report.total_guesses * 100, 1)
+        if report.total_clues > 0:
+            report.spymaster_success_rate = round(report.total_clues_fully_guessed / report.total_clues * 100, 1)
+
         return report
 
     def _run_single_game(self, index: int) -> GameMetrics:
@@ -115,9 +152,11 @@ class Evaluator:
                 clue_word = clue_result.get("clue", "???")
                 clue_num = clue_result.get("number", 0)
                 metrics.clues.append({"team": team, "word": clue_word, "number": clue_num})
+                metrics.total_clues += 1
                 print(f"  [{team.upper()}] Clue: \"{clue_word}\" for {clue_num}")
             except Exception as e:
                 print(f"  [{team.upper()}] Clue error: {e}")
+                metrics.clue_errors += 1
                 gm.pass_turn()
                 continue
 
@@ -126,6 +165,7 @@ class Evaluator:
 
             # AI Guess phase — guess up to clue_num + 1 times
             max_guesses = clue_num + 1 if clue_num > 0 else 1
+            correct_in_this_clue = 0
             for g in range(max_guesses):
                 if state.game_over or state.current_phase != "guess":
                     break
@@ -133,13 +173,31 @@ class Evaluator:
                     guess_result = gm.run_ai_guess()
                     word = guess_result.get("word", "???")
                     correct = guess_result.get("correct", False)
-                    print(f"  [{team.upper()}] Guess: {word} → {'✓' if correct else '✗'}")
+                    revealed = guess_result.get("revealed", "")
+                    print(f"  [{team.upper()}] Guess: {word} → {'✓' if correct else '✗'} ({revealed})")
+
+                    # Component-level: track each guess type
+                    metrics.total_guesses += 1
+                    if correct:
+                        metrics.correct_guesses += 1
+                        correct_in_this_clue += 1
+                    elif revealed == "assassin":
+                        metrics.assassin_guesses += 1
+                    elif revealed == "neutral":
+                        metrics.neutral_guesses += 1
+                    else:
+                        metrics.wrong_team_guesses += 1
+
                     if not correct:
                         break
                 except Exception as e:
                     print(f"  [{team.upper()}] Guess error: {e}")
                     gm.pass_turn()
                     break
+
+            # Spymaster success: operative guessed all intended words
+            if correct_in_this_clue >= clue_num and clue_num > 0:
+                metrics.clues_fully_guessed += 1
 
         metrics.duration_seconds = round(time.time() - start, 2)
         metrics.total_turns = turn_count
@@ -161,13 +219,29 @@ class Evaluator:
     @staticmethod
     def print_summary(report: EvalReport):
         """Print a human-readable summary."""
-        print(f"\n{'='*50}")
+        print(f"\n{'='*55}")
         print("  EVALUATION SUMMARY")
-        print(f"{'='*50}")
+        print(f"{'='*55}")
         print(f"  Games played : {report.total_games}")
         print(f"  Red wins     : {report.red_wins}")
         print(f"  Blue wins    : {report.blue_wins}")
         print(f"  Avg turns    : {report.avg_turns:.1f}")
         print(f"  Avg duration : {report.avg_duration:.1f}s")
         print(f"  Assassin hits: {report.assassin_hits}")
-        print(f"{'='*50}")
+        print(f"\n{'-'*55}")
+        print("  OPERATIVE (Guesser) METRICS")
+        print(f"{'-'*55}")
+        print(f"  Total guesses      : {report.total_guesses}")
+        print(f"  Correct guesses    : {report.total_correct_guesses}")
+        print(f"  Accuracy           : {report.operative_accuracy}%")
+        print(f"  Wrong team guesses : {report.total_wrong_team}")
+        print(f"  Neutral guesses    : {report.total_neutral}")
+        print(f"  Assassin guesses   : {report.total_assassin_guesses}")
+        print(f"\n{'-'*55}")
+        print("  SPYMASTER (Clue Giver) METRICS")
+        print(f"{'-'*55}")
+        print(f"  Total clues        : {report.total_clues}")
+        print(f"  Fully guessed      : {report.total_clues_fully_guessed}")
+        print(f"  Success rate       : {report.spymaster_success_rate}%")
+        print(f"  Clue errors        : {report.total_clue_errors}")
+        print(f"{'='*55}")

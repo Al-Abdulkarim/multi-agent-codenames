@@ -27,6 +27,7 @@ const sounds = {
   lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2028/2028-preview.mp3')
 };
 let currentChatAudio = null;
+let ttsMuted = false;
 
 // Preload all sounds
 Object.values(sounds).forEach(audio => { audio.preload = 'auto'; audio.load(); });
@@ -324,6 +325,28 @@ function cacheDOM() {
   $chatMessages = document.getElementById('chat-messages');
   $chatInput = document.getElementById('chat-input');
   $chatSendBtn = document.getElementById('chat-send-btn');
+
+  // TTS mute toggle – wraps playChatAudio without touching its original body
+  const _originalPlayChatAudio = playChatAudio;
+  const ttsMuteBtn = document.getElementById('tts-mute-btn');
+  if (ttsMuteBtn) {
+    playChatAudio = function(url) {
+      if (ttsMuted) return Promise.resolve();
+      return _originalPlayChatAudio(url);
+    };
+    ttsMuteBtn.addEventListener('click', () => {
+      ttsMuted = !ttsMuted;
+      ttsMuteBtn.classList.toggle('muted', ttsMuted);
+      ttsMuteBtn.setAttribute('aria-label', ttsMuted ? 'Unmute TTS' : 'Mute TTS');
+      ttsMuteBtn.title = ttsMuted
+        ? (config.language === 'ar' ? 'تشغيل صوت التشات' : 'Unmute chat audio')
+        : (config.language === 'ar' ? 'كتم صوت التشات' : 'Mute chat audio');
+      if (ttsMuted && currentChatAudio) {
+        currentChatAudio.pause();
+        currentChatAudio = null;
+      }
+    });
+  }
 
   $gameOverOverlay = document.getElementById('game-over-overlay');
   $gameOverIcon = document.getElementById('game-over-icon');
