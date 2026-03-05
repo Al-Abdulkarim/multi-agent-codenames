@@ -2,7 +2,7 @@
   <img src="./assets/banner.png" alt="CipherNames Banner" width="400"/>
 </p>
 
-# 🕵️ Codenames — Multi-Agent AI Board Game
+# 🕵️ CipherNames — Multi-Agent AI Board Game
 
 ## Overview
 
