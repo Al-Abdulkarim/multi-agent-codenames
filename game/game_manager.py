@@ -115,6 +115,7 @@ class GameManager:
             "guesses_remaining": s.guesses_remaining if s else 0,
             "current_clue": "N/A",
             "current_number": 0,
+            "human_team": s.human_team.value if s else "?",
         }
         if s and s.turns_history:
             last = s.turns_history[-1]
